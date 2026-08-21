@@ -41,7 +41,9 @@ async def test_nip58_claim_dm_creates_idempotent_award(monkeypatch):
 
     passport = PrivateKey()
     event = claim_event(passport, settings.issuer_pubkey, badge.id)
-    claim, created = await process_claim_event(event)
+    result = await process_claim_event(event)
+    assert result is not None
+    claim, created = result
     assert created is True
     assert claim.passport_pubkey == passport.public_key.hex()
     assert claim.location_verified is False
@@ -55,7 +57,9 @@ async def test_nip58_claim_dm_creates_idempotent_award(monkeypatch):
     assert ["a", f"30009:{settings.issuer_pubkey}:{badge.id}"] in award.tags
     assert ["p", passport.public_key.hex()] in award.tags
 
-    duplicate, created = await process_claim_event(event)
+    duplicate_result = await process_claim_event(event)
+    assert duplicate_result is not None
+    duplicate, created = duplicate_result
     assert created is False
     assert duplicate.id == claim.id
     assert len(published) == 2

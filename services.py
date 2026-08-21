@@ -247,7 +247,10 @@ async def process_claim_event(event: dict) -> tuple[Claim, bool] | None:
             raise ValueError("Invalid encrypted claim message") from exc
         if payload.get("type") not in {"claim_poap", "claim_badge"}:
             return None
-        badge = await get_badge(settings.issuer_pubkey, payload.get("badge_id", ""))
+        issuer_pubkey = settings.issuer_pubkey
+        if not issuer_pubkey:
+            raise ValueError("Issuer public key is not configured")
+        badge = await get_badge(issuer_pubkey, payload.get("badge_id", ""))
         if not badge:
             raise ValueError("Badge not found")
         request = ClaimRequest(
