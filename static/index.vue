@@ -1,397 +1,286 @@
 <template id="page-badges">
   <div class="row q-col-gutter-md">
-    <div class="col-12 col-md-8 col-lg-7 q-gutter-y-md">
-    
-      <q-card
-        id="settingsCard"
-      >
-        <q-card-section
-          class=""
-        >
-          <div class="row">
-            <div class="col">
-              <span class="text-h5">Badges</span>
-              <q-btn
-                @click="showSettingsDataForm()"
-                v-if="true"
-                unelevated
-                split
-                color="primary"
-                icon="settings"
-                class="float-right"
-              >
-              </q-btn>
-            </div>
-          </div>
-        </q-card-section>
-      </q-card>
-    
-
-      <div class="q-mt-lg">
-        <span class="text-h5">Owner Data</span>
-      </div>
-      <q-card
-        id="ownerDataCard"
-        class="q-mt-xs"
-      >
-        <q-card-section
-          class=""
-        >
-          <div class="row items-center no-wrap q-mb-md">
-            <div class="col">
-              <q-input
-                :label="$t('search')"
-                dense
-                class="q-pr-xl"
-                v-model="ownerDataTable.search"
-              >
-                <template v-slot:before>
-                  <q-icon name="search"> </q-icon>
-                </template>
-                <template v-slot:append>
-                  <q-icon
-                    v-if="ownerDataTable.search !== ''"
-                    name="close"
-                    @click="ownerDataTable.search = ''"
-                    class="cursor-pointer"
-                  >
-                  </q-icon>
-                </template>
-              </q-input>
-            </div>
-            <div class="col-auto">
-              
-              <q-btn
-                @click="showNewOwnerDataForm()"
-                unelevated
-                split
-                color="primary"
-              >
-                New Owner Data
-              </q-btn>
-              
-              <q-btn
-                flat
-                color="grey"
-                icon="file_download"
-                @click="exportOwnerDataCSV"
-                >CSV</q-btn
-              >
-            </div>
-          </div>
-          <q-table
-            dense
-            flat
-            :rows="ownerDataList"
-            row-key="id"
-            :columns="ownerDataTable.columns"
-            v-model:pagination="ownerDataTable.pagination"
-            :loading="ownerDataTable.loading"
-            @request="getOwnerData"
-          >
-            <template v-slot:header="props">
-              <q-tr :props="props">
-                <q-th auto-width></q-th>
-                <q-th v-for="col in props.cols" :key="col.name" :props="props">
-                  ${ col.label }
-                </q-th>
-              </q-tr>
-            </template>
-
-            <template v-slot:body="props">
-              <q-tr :props="props">
-                <q-td auto-width>
-                  
-                  <q-btn
-                    flat
-                    dense
-                    size="xs"
-                    icon="launch"
-                    color="primary"
-                    type="a"
-                    :href="'/badges/' + props.row.id"
-                    target="_blank"
-                    class="q-mr-sm"
-                    ><q-tooltip>Open public page</q-tooltip></q-btn
-                  >
-                   
-                  <q-btn
-                    flat
-                    dense
-                    size="xs"
-                    @click="showEditOwnerDataForm(props.row)"
-                    icon="edit"
-                    color="light-blue"
-                    class="q-mr-sm"
-                  >
-                    <q-tooltip> Edit </q-tooltip>
-                  </q-btn>
-                  
-                  <q-btn
-                    flat
-                    dense
-                    size="xs"
-                    @click="deleteOwnerData(props.row.id)"
-                    icon="cancel"
-                    color="pink"
-                    class="q-mr-sm"
-                  >
-                    <q-tooltip> Delete </q-tooltip>
-                  </q-btn>
-                </q-td>
-
-                <q-td v-for="col in props.cols" :key="col.name" :props="props">
-                  <div v-if="col.field == 'updated_at'">
-                    <span v-text="dateFromNow(col.value)"> </span>
-                  </div>
-                  <div v-else>${ col.value }</div>
-                </q-td>
-              </q-tr>
-            </template>
-          </q-table>
-        </q-card-section>
-      </q-card>
-
-      <div class="q-mt-lg">
-        <span class="text-h5">Client Data</span>
-      </div>
-      <q-card
-        id="clientDataCard"
-        class="q-mt-xs"
-      >
-        <q-card-section
-          class=""
-        >
-          <div class="row items-center no-wrap q-mb-md">
-            <div class="col">
-              <q-input
-                :label="$t('search')"
-                dense
-                class="q-pr-xl"
-                v-model="clientDataTable.search"
-              >
-                <template v-slot:before>
-                  <q-icon name="search"> </q-icon>
-                </template>
-                <template v-slot:append>
-                  <q-icon
-                    v-if="clientDataTable.search !== ''"
-                    name="close"
-                    @click="clientDataTable.search = ''"
-                    class="cursor-pointer"
-                  >
-                  </q-icon>
-                </template>
-              </q-input>
-            </div>
-            <div class="col-auto">
-              <q-select
-                filled
-                dense
-                v-model="clientDataFormDialog.ownerData"
-                :options="[
-                  {label: 'All Owner Data', value: ''},
-                  ...ownerDataList.map(x => ({
-                    label: x.name || x.id,
-                    value: x.id
-                  }))
-                ]"
-                label="Owner Data"
-                class="q-mb-md"
-              ></q-select>
-            </div>
-            <div class="col-auto">
-              <q-btn
-                flat
-                color="grey"
-                icon="file_download"
-                class="q-mb-md"
-                @click="exportClientDataCSV"
-                >CSV</q-btn
-              >
-            </div>
-          </div>
-          <q-table
-            dense
-            flat
-            :rows="clientDataList"
-            row-key="id"
-            :columns="clientDataTable.columns"
-            v-model:pagination="clientDataTable.pagination"
-            :loading="clientDataTable.loading"
-            @request="getClientData"
-          >
-            <template v-slot:header="props">
-              <q-tr :props="props">
-                <q-th auto-width></q-th>
-                <q-th v-for="col in props.cols" :key="col.name" :props="props">
-                  ${ col.label }
-                </q-th>
-              </q-tr>
-            </template>
-
-            <template v-slot:body="props">
-              <q-tr :props="props">
-                <q-td auto-width>
-                  
-                  <q-btn
-                    flat
-                    dense
-                    size="xs"
-                    @click="showEditClientDataForm(props.row)"
-                    icon="edit"
-                    color="light-blue"
-                    class="q-mr-sm"
-                  >
-                    <q-tooltip> Edit </q-tooltip>
-                  </q-btn>
-                  
-                  <q-btn
-                    flat
-                    dense
-                    size="xs"
-                    @click="deleteClientData(props.row.id)"
-                    icon="cancel"
-                    color="pink"
-                    class="q-mr-sm"
-                  >
-                    <q-tooltip> Delete </q-tooltip>
-                  </q-btn>
-                </q-td>
-
-                <q-td v-for="col in props.cols" :key="col.name" :props="props">
-                  <div v-if="col.field == 'updated_at'">
-                    <span v-text="dateFromNow(col.value)"> </span>
-                  </div>
-                  <div v-else>${ col.value }</div>
-                </q-td>
-              </q-tr>
-            </template>
-          </q-table>
-        </q-card-section>
-      </q-card>
-    </div>
-    
-    <div class="col-12 col-md-4 col-lg-5 q-gutter-y-md">
+    <div class="col-12">
       <q-card>
-        <q-card-section>
-          <h6 class="text-subtitle1 q-my-none">Badges</h6>
-          <p></p>
+        <q-card-section class="row items-center">
+          <div class="text-h5">Badges</div>
+          <q-space></q-space>
+          <q-btn
+            flat
+            icon="key"
+            label="Issuer key"
+            @click="showSettings"
+          ></q-btn>
+          <q-btn
+            color="primary"
+            unelevated
+            icon="add"
+            label="New badge"
+            @click="newBadge"
+          ></q-btn>
         </q-card-section>
-        <q-card-section class="q-pa-none">
-          <q-separator></q-separator>
-          <q-list>
-            <!-- {% include "badges/_api_docs.html" %} -->
-            <q-separator></q-separator>
-            <q-expansion-item group="extras" icon="info" label="More info">
-              <q-card>
-                <q-card-section>
-                  <p>Some more info about Badges.</p>
-                  <small
-                    >Created by
-                    <a
-                      class="text-secondary"
-                      href="https://github.com/lnbits"
-                      target="_blank"
-                      >LNbits extension builder</a
-                    >.</small
-                  >
-                </q-card-section>
-              </q-card>
-            </q-expansion-item>
-          </q-list>
+        <q-separator></q-separator>
+        <q-card-section v-if="!settings.configured">
+          <q-banner rounded class="bg-orange-1 text-orange-10">
+            Configure one issuer nsec before the first public claim. Key
+            rotation is not supported.
+            <template v-slot:action>
+              <q-btn flat label="Configure" @click="showSettings"></q-btn>
+            </template>
+          </q-banner>
+        </q-card-section>
+        <q-card-section v-else>
+          <q-banner rounded class="bg-green-1 text-green-10">
+            Issuer: <span v-text="settings.issuer_npub"></span>
+          </q-banner>
+        </q-card-section>
+        <q-card-section>
+          <q-table
+            flat
+            :rows="badges"
+            :columns="badgeColumns"
+            row-key="id"
+            :loading="loading"
+          >
+            <template v-slot:body-cell-active="props">
+              <q-td :props="props">
+                <q-badge :color="props.row.is_active ? 'positive' : 'grey'">
+                  <span
+                    v-text="props.row.is_active ? 'Active' : 'Inactive'"
+                  ></span>
+                </q-badge>
+              </q-td>
+            </template>
+            <template v-slot:body-cell-actions="props">
+              <q-td :props="props">
+                <q-btn
+                  flat
+                  round
+                  dense
+                  icon="qr_code_2"
+                  color="primary"
+                  @click="showQr(props.row)"
+                >
+                  <q-tooltip>Claim QR</q-tooltip>
+                </q-btn>
+                <q-btn
+                  flat
+                  round
+                  dense
+                  icon="people"
+                  color="secondary"
+                  @click="showClaims(props.row)"
+                >
+                  <q-tooltip>Claims</q-tooltip>
+                </q-btn>
+                <q-btn
+                  flat
+                  round
+                  dense
+                  icon="edit"
+                  color="light-blue"
+                  @click="editBadge(props.row)"
+                ></q-btn>
+                <q-btn
+                  flat
+                  round
+                  dense
+                  icon="delete"
+                  color="negative"
+                  @click="deleteBadge(props.row)"
+                ></q-btn>
+              </q-td>
+            </template>
+            <template v-slot:no-data>
+              <div class="full-width row flex-center q-pa-lg text-grey">
+                Create your first badge.
+              </div>
+            </template>
+          </q-table>
         </q-card-section>
       </q-card>
     </div>
-    
 
-    <!--/////////////////////////////////////////////////-->
-    <!--//////////////FORM DIALOG////////////////////////-->
-    <!--/////////////////////////////////////////////////-->
-
-    <q-dialog v-model="settingsFormDialog.show" position="top">
+    <q-dialog v-model="settingsDialog.show" position="top">
       <q-card
-        v-if="settingsFormDialog.show"
-        class="q-pa-lg q-pt-xl lnbits__dialog-card q-col-gutter-md"
+        class="q-pa-lg q-pt-xl lnbits__dialog-card"
+        style="width: 600px; max-width: 95vw"
       >
-        <span class="text-h5">Settings</span>
-       
-<q-input
-  filled
-  dense
-  v-model.trim="settingsFormDialog.data.name"
-  label="Name"
-  hint="  (optional)"
-></q-input>
- 
-        <div class="row q-mt-lg">
+        <q-form @submit.prevent="saveSettings" class="q-gutter-md">
+          <div class="text-h6">Issuer key</div>
+          <div v-if="settings.configured" class="text-body2">
+            This issuer is fixed to
+            <span v-text="settings.issuer_npub"></span>. Key rotation is not
+            supported.
+          </div>
+          <q-input
+            v-else
+            v-model.trim="settingsDialog.data.issuer_nsec"
+            type="password"
+            label="Issuer nsec"
+            hint="Stored encrypted; never returned by the API."
+            required
+          ></q-input>
+          <div class="row q-mt-lg">
+            <q-btn
+              v-if="!settings.configured"
+              type="submit"
+              color="primary"
+              unelevated
+              label="Save issuer key"
+            ></q-btn>
+            <q-btn
+              v-close-popup
+              flat
+              color="grey"
+              class="q-ml-auto"
+              label="Close"
+            ></q-btn>
+          </div>
+        </q-form>
+      </q-card>
+    </q-dialog>
+
+    <q-dialog v-model="badgeDialog.show" position="top">
+      <q-card
+        class="q-pa-lg q-pt-xl lnbits__dialog-card"
+        style="width: 600px; max-width: 95vw"
+      >
+        <q-form @submit.prevent="saveBadge" class="q-gutter-md">
+          <div class="text-h6" v-text="badgeDialogTitle"></div>
+          <q-input
+            v-model.trim="badgeDialog.data.name"
+            label="Name"
+            required
+            autofocus
+          ></q-input>
+          <q-input
+            v-model.trim="badgeDialog.data.description"
+            label="Description"
+            type="textarea"
+          ></q-input>
+          <q-input
+            v-model.trim="badgeDialog.data.image_url"
+            label="Image URL"
+            hint="Optional"
+          ></q-input>
+          <q-toggle
+            v-model="badgeDialog.data.is_active"
+            label="Active"
+          ></q-toggle>
+          <div class="row q-col-gutter-sm">
+            <div class="col-12 col-sm-6">
+              <q-input
+                v-model="badgeDialog.data.starts_at"
+                type="datetime-local"
+                label="Starts at"
+              ></q-input>
+            </div>
+            <div class="col-12 col-sm-6">
+              <q-input
+                v-model="badgeDialog.data.ends_at"
+                type="datetime-local"
+                label="Ends at"
+              ></q-input>
+            </div>
+          </div>
+          <div class="text-subtitle2">Optional location check</div>
+          <div class="row q-col-gutter-sm">
+            <div class="col-12 col-sm-4">
+              <q-input
+                v-model.number="badgeDialog.data.latitude"
+                type="number"
+                label="Latitude"
+              ></q-input>
+            </div>
+            <div class="col-12 col-sm-4">
+              <q-input
+                v-model.number="badgeDialog.data.longitude"
+                type="number"
+                label="Longitude"
+              ></q-input>
+            </div>
+            <div class="col-12 col-sm-4">
+              <q-input
+                v-model.number="badgeDialog.data.radius_meters"
+                type="number"
+                label="Radius (m)"
+              ></q-input>
+            </div>
+          </div>
+          <div class="row q-mt-lg">
+            <q-btn
+              type="submit"
+              color="primary"
+              unelevated
+              label="Save"
+            ></q-btn>
+            <q-btn
+              v-close-popup
+              flat
+              color="grey"
+              class="q-ml-auto"
+              label="Cancel"
+            ></q-btn>
+          </div>
+        </q-form>
+      </q-card>
+    </q-dialog>
+
+    <q-dialog v-model="qrDialog.show" position="top">
+      <q-card v-if="qrDialog.badge" class="q-pa-lg lnbits__dialog-card">
+        <div class="text-h6 q-mb-md" v-text="qrDialog.badge.name"></div>
+        <lnbits-qrcode
+          :href="claimUrl(qrDialog.badge)"
+          :value="claimUrl(qrDialog.badge)"
+          class="q-mb-md"
+        ></lnbits-qrcode>
+        <q-input
+          readonly
+          :model-value="claimUrl(qrDialog.badge)"
+          label="Claim API URL for the companion app"
+        ></q-input>
+        <div class="row q-mt-md">
           <q-btn
-            @click="updateSettings"
-            unelevated
             color="primary"
-            type="submit"
-            >Update</q-btn
-          >
-          <q-btn v-close-popup flat color="grey" class="q-ml-auto"
-            >Cancel</q-btn
-          >
+            unelevated
+            label="Copy link"
+            @click="copyClaimUrl(qrDialog.badge)"
+          ></q-btn>
+          <q-btn
+            flat
+            color="grey"
+            class="q-ml-auto"
+            label="Close"
+            v-close-popup
+          ></q-btn>
         </div>
       </q-card>
     </q-dialog>
 
-    <q-dialog v-model="ownerDataFormDialog.show" position="top">
+    <q-dialog v-model="claimsDialog.show" position="top">
       <q-card
-        v-if="ownerDataFormDialog.show"
-        class="q-pa-lg q-pt-md lnbits__dialog-card q-col-gutter-md"
+        v-if="claimsDialog.badge"
+        class="q-pa-lg lnbits__dialog-card"
+        style="width: 900px; max-width: 95vw"
       >
-        <span class="text-h5">Owner Data</span>
-
-       
-<q-input
-  filled
-  dense
-  v-model.trim="ownerDataFormDialog.data.name"
-  label="Name"
-  hint="  (optional)"
-></q-input>
- 
-        <div class="row q-mt-lg">
-          <q-btn @click="saveOwnerData" unelevated color="primary">
-            <span v-if="ownerDataFormDialog.data.id">Update</span>
-            <span v-else>Create</span>
-          </q-btn>
-          <q-btn v-close-popup flat color="grey" class="q-ml-auto"
-            >Cancel</q-btn
-          >
+        <div class="row items-center q-mb-md">
+          <div class="text-h6" v-text="claimsDialog.badge.name"></div>
+          <q-space></q-space>
+          <q-btn
+            flat
+            icon="file_download"
+            label="CSV"
+            @click="exportClaims(claimsDialog.badge)"
+          ></q-btn>
         </div>
-      </q-card>
-    </q-dialog>
-
-    <q-dialog v-model="clientDataFormDialog.show" position="top">
-      <q-card
-        v-if="clientDataFormDialog.show"
-        class="q-pa-lg q-pt-md lnbits__dialog-card q-col-gutter-md"
-      >
-        <span class="text-h5">Client Data</span>
-
-       
-<q-input
-  filled
-  dense
-  v-model.trim="clientDataFormDialog.data.name"
-  label="Name"
-  hint="  (optional)"
-></q-input>
- 
-        <div class="row q-mt-lg">
-          <q-btn @click="saveClientData" unelevated color="primary">
-            <span v-if="clientDataFormDialog.data.id">Update</span>
-            <span v-else>Create</span>
-          </q-btn>
-          <q-btn v-close-popup flat color="grey" class="q-ml-auto"
-            >Cancel</q-btn
-          >
-        </div>
+        <q-table
+          flat
+          :rows="claimsDialog.claims"
+          :columns="claimColumns"
+          row-key="id"
+          :loading="claimsDialog.loading"
+        ></q-table>
       </q-card>
     </q-dialog>
   </div>

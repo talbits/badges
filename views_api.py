@@ -1,325 +1,184 @@
-# Description: This file contains the extensions API endpoints.
+from csv import writer
 from http import HTTPStatus
+from io import StringIO
 
 from fastapi import APIRouter, Depends
 from fastapi.exceptions import HTTPException
-from lnbits.core.models import SimpleStatus, User
+from fastapi.responses import PlainTextResponse
+from lnbits.core.models import SimpleStatus
 from lnbits.core.models.users import AccountId
-from lnbits.db import Filters, Page
-from lnbits.decorators import (
-    check_account_exists,
-    check_account_id_exists,
-    parse_filters,
-)
-from lnbits.helpers import generate_filter_params_openapi
+from lnbits.decorators import check_account_id_exists
 
 from .crud import (
-    create_client_data,
-    create_owner_data,
-    delete_client_data,
-    delete_owner_data,
-    get_client_data_by_id,
-    get_client_data_paginated,
-    get_owner_data,
-    get_owner_data_by_id,
-    get_owner_data_ids_by_user,
-    get_owner_data_paginated,
-    update_client_data,
-    update_owner_data,
+    create_badge,
+    delete_badge,
+    get_badge,
+    get_badge_by_token,
+    get_badges,
+    get_claims,
+    get_passport_badges,
+    update_badge,
 )
 from .models import (
-    ClientData,
-    ClientDataFilters,
-    ClientDataPaymentRequest,  # 
-    CreateClientData,
-    CreateOwnerData,
-    ExtensionSettings,  #  
-    OwnerData,
-    OwnerDataFilters,
-    PublicOwnerData,  #  
+    Badge,
+    Claim,
+    ClaimRequest,
+    ClaimResult,
+    CreateBadge,
+    IssuerSettingsResponse,
+    IssuerSettingsUpdate,
+    PassportBadge,
+    PublicBadge,
 )
-
 from .services import (
-    get_settings,  #  
-    payment_request_for_client_data,  # 
-    update_settings,  #  
+    claim_badge,
+    configure_issuer,
+    get_issuer_settings,
+    validate_badge_data,
 )
-
-
-owner_data_filters = parse_filters(OwnerDataFilters)
-client_data_filters = parse_filters(ClientDataFilters)
 
 badges_api_router = APIRouter()
 
 
-############################# Owner Data #############################
-@badges_api_router.post("/api/v1/owner_data", status_code=HTTPStatus.CREATED)
-async def api_create_owner_data(
-    data: CreateOwnerData,
-    account_id: AccountId = Depends(check_account_id_exists),
-) -> OwnerData:
-    owner_data = await create_owner_data(account_id.id, data)
-    return owner_data
+def _public_badge(badge: Badge) -> PublicBadge:
+    return PublicBadge(**badge.dict())
 
 
-@badges_api_router.put("/api/v1/owner_data/{owner_data_id}", status_code=HTTPStatus.CREATED)
-async def api_update_owner_data(
-    owner_data_id: str,
-    data: CreateOwnerData,
-    account_id: AccountId = Depends(check_account_id_exists),
-) -> OwnerData:
-    owner_data = await get_owner_data(account_id.id, owner_data_id)
-    if not owner_data:
-        raise HTTPException(HTTPStatus.NOT_FOUND, "Owner Data not found.")
-    if owner_data.user_id != account_id.id:
-        raise HTTPException(HTTPStatus.FORBIDDEN, "You do not own this owner data.")
-    owner_data = await update_owner_data(OwnerData(**{**owner_data.dict(), **data.dict()}))
-    return owner_data
+async def _owned_badge(badge_id: str, account_id: AccountId) -> Badge:
+    badge = await get_badge(account_id.id, badge_id)
+    if not badge:
+        raise HTTPException(HTTPStatus.NOT_FOUND, "Badge not found.")
+    return badge
 
 
-@badges_api_router.get(
-    "/api/v1/owner_data/paginated",
-    name="Owner Data List",
-    summary="get paginated list of owner_data",
-    response_description="list of owner_data",
-    openapi_extra=generate_filter_params_openapi(OwnerDataFilters),
-    response_model=Page[OwnerData],
-)
-async def api_get_owner_data_paginated(
-    account_id: AccountId = Depends(check_account_id_exists),
-    filters: Filters = Depends(owner_data_filters),
-) -> Page[OwnerData]:
-
-    return await get_owner_data_paginated(
-        user_id=account_id.id,
-        filters=filters,
-    )
-
-
-@badges_api_router.get(
-    "/api/v1/owner_data/{owner_data_id}",
-    name="Get OwnerData",
-    summary="Get the owner_data with this id.",
-    response_description="An owner_data or 404 if not found",
-    response_model=OwnerData,
-)
-async def api_get_owner_data(
-    owner_data_id: str,
-    account_id: AccountId = Depends(check_account_id_exists),
-) -> OwnerData:
-
-    owner_data = await get_owner_data(account_id.id, owner_data_id)
-    if not owner_data:
-        raise HTTPException(HTTPStatus.NOT_FOUND, "OwnerData not found.")
-
-    return owner_data
-
-
-@badges_api_router.get(
-    "/api/v1/owner_data/{owner_data_id}/public",
-    name="Get Public OwnerData",
-    summary="Get the public owner_data with this id." "This is a public endpoint.",
-    response_description="An owner_data or 404 if not found",
-    response_model=PublicOwnerData,
-)
-async def api_get_public_owner_data(owner_data_id: str) -> PublicOwnerData:
-
-    owner_data = await get_owner_data_by_id(owner_data_id)
-    if not owner_data:
-        raise HTTPException(HTTPStatus.NOT_FOUND, "OwnerData not found.")
-
-    return PublicOwnerData(**owner_data.dict())
-
-
-
-
-@badges_api_router.delete(
-    "/api/v1/owner_data/{owner_data_id}",
-    name="Delete Owner Data",
-    summary="Delete the owner_data " "and optionally all its associated client_data.",
-    response_description="The status of the deletion.",
-    response_model=SimpleStatus,
-)
-async def api_delete_owner_data(
-    owner_data_id: str,
-    clear_client_data: bool | None = False,
-    account_id: AccountId = Depends(check_account_id_exists),
-) -> SimpleStatus:
-
-    await delete_owner_data(account_id.id, owner_data_id)
-    if clear_client_data is True:
-        # await delete all client data associated with this owner data
-        pass
-    return SimpleStatus(success=True, message="Owner Data Deleted")
-
-
-############################# Client Data #############################
-@badges_api_router.post(
-    "/api/v1/client_data/{owner_data_id}",
-    name="Create Client Data",
-    summary="Create new client data for the specified owner data.",
-    response_description="The created client data.",
-    response_model=ClientData,
-    status_code=HTTPStatus.CREATED,
-)
-async def api_create_client_data(
-    owner_data_id: str,
-    data: CreateClientData,
-    account_id: AccountId = Depends(check_account_id_exists),
-) -> ClientData:
-    owner_data = await get_owner_data(account_id.id, owner_data_id)
-    if not owner_data:
-        raise HTTPException(HTTPStatus.NOT_FOUND, "Owner Data not found.")
-
-    client_data = await create_client_data(owner_data_id, data)
-    return client_data
-
-
-@badges_api_router.put(
-    "/api/v1/client_data/{owner_data_id}/public",
-    name="Submit new Client Data",
-    summary="Submit new client data for the specified owner data." "This is a public endpoint.",
-    response_description="The created client data.",
-    response_model=ClientDataPaymentRequest | None,
-)
-async def api_submit_public_client_data(
-    owner_data_id: str,
-    data: CreateClientData,
-) -> ClientDataPaymentRequest | None:
-
-    return await payment_request_for_client_data(owner_data_id, data)
-
-
-
-
-@badges_api_router.put(
-    "/api/v1/client_data/{client_data_id}",
-    name="Update Client Data",
-    summary="Update the client_data with this id.",
-    response_description="The updated client data.",
-    response_model=ClientData,
-)
-async def api_update_client_data(
-    client_data_id: str,
-    data: CreateClientData,
-    account_id: AccountId = Depends(check_account_id_exists),
-) -> ClientData:
-    client_data = await get_client_data_by_id(client_data_id)
-    if not client_data:
-        raise HTTPException(HTTPStatus.NOT_FOUND, "Client Data not found.")
-
-    owner_data = await get_owner_data(account_id.id, client_data.owner_data_id)
-    if not owner_data:
-        raise HTTPException(HTTPStatus.NOT_FOUND, "Owner Data not found.")
-
-    client_data = await update_client_data(ClientData(**{**client_data.dict(), **data.dict()}))
-    return client_data
-
-
-@badges_api_router.get(
-    "/api/v1/client_data/paginated",
-    name="Client Data List",
-    summary="get paginated list of client_data",
-    response_description="list of client_data",
-    openapi_extra=generate_filter_params_openapi(ClientDataFilters),
-    response_model=Page[ClientData],
-)
-async def api_get_client_data_paginated(
-    account_id: AccountId = Depends(check_account_id_exists),
-    owner_data_id: str | None = None,
-    filters: Filters = Depends(client_data_filters),
-) -> Page[ClientData]:
-
-    owner_data_ids = await get_owner_data_ids_by_user(account_id.id)
-
-    if owner_data_id:
-        if owner_data_id not in owner_data_ids:
-            raise HTTPException(HTTPStatus.FORBIDDEN, "Not your owner data.")
-        owner_data_ids = [owner_data_id]
-
-    return await get_client_data_paginated(
-        owner_data_ids=owner_data_ids,
-        filters=filters,
-    )
-
-
-@badges_api_router.get(
-    "/api/v1/client_data/{client_data_id}",
-    name="Get Client Data",
-    summary="Get the client data with this id.",
-    response_description="An client data or 404 if not found",
-    response_model=ClientData,
-)
-async def api_get_client_data(
-    client_data_id: str,
-    account_id: AccountId = Depends(check_account_id_exists),
-) -> ClientData:
-
-    client_data = await get_client_data_by_id(client_data_id)
-    if not client_data:
-        raise HTTPException(HTTPStatus.NOT_FOUND, "ClientData not found.")
-    owner_data = await get_owner_data(account_id.id, client_data.owner_data_id)
-    if not owner_data:
-        raise HTTPException(HTTPStatus.NOT_FOUND, "Owner Data deleted for this Client Data.")
-
-    return client_data
-
-
-@badges_api_router.delete(
-    "/api/v1/client_data/{client_data_id}",
-    name="Delete Client Data",
-    summary="Delete the client_data",
-    response_description="The status of the deletion.",
-    response_model=SimpleStatus,
-)
-async def api_delete_client_data(
-    client_data_id: str,
-    account_id: AccountId = Depends(check_account_id_exists),
-) -> SimpleStatus:
-
-    client_data = await get_client_data_by_id(client_data_id)
-    if not client_data:
-        raise HTTPException(HTTPStatus.NOT_FOUND, "ClientData not found.")
-    owner_data = await get_owner_data(account_id.id, client_data.owner_data_id)
-    if not owner_data:
-        raise HTTPException(HTTPStatus.NOT_FOUND, "Owner Data deleted for this Client Data.")
-
-    await delete_client_data(owner_data.id, client_data_id)
-    return SimpleStatus(success=True, message="Client Data Deleted")
-
-
-############################ Settings #############################
-@badges_api_router.get(
-    "/api/v1/settings",
-    name="Get Settings",
-    summary="Get the settings for the current user.",
-    response_description="The settings or 404 if not found",
-    response_model=ExtensionSettings,
-)
+@badges_api_router.get("/api/v1/settings", response_model=IssuerSettingsResponse)
 async def api_get_settings(
     account_id: AccountId = Depends(check_account_id_exists),
-) -> ExtensionSettings:
-    user_id = "admin" if ExtensionSettings.is_admin_only() else account_id.id
-    return await get_settings(user_id)
+) -> IssuerSettingsResponse:
+    try:
+        return await get_issuer_settings(account_id.id)
+    except ValueError as exc:
+        raise HTTPException(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc)) from exc
 
 
-@badges_api_router.put(
-    "/api/v1/settings",
-    name="Update Settings",
-    summary="Update the settings for the current user.",
-    response_description="The updated settings.",
-    response_model=ExtensionSettings,
-)
-async def api_update_extension_settings(
-    data: ExtensionSettings,
-    account: User = Depends(check_account_exists),
-) -> ExtensionSettings:
-    if ExtensionSettings.is_admin_only() and not account.admin:
-        raise HTTPException(
-            HTTPStatus.FORBIDDEN,
-            "Only admins can update settings.",
+@badges_api_router.put("/api/v1/settings", response_model=IssuerSettingsResponse)
+async def api_update_settings(
+    data: IssuerSettingsUpdate,
+    account_id: AccountId = Depends(check_account_id_exists),
+) -> IssuerSettingsResponse:
+    try:
+        return await configure_issuer(account_id.id, data.issuer_nsec)
+    except ValueError as exc:
+        raise HTTPException(HTTPStatus.BAD_REQUEST, str(exc)) from exc
+
+
+@badges_api_router.get("/api/v1/badges", response_model=list[Badge])
+async def api_get_badges(
+    account_id: AccountId = Depends(check_account_id_exists),
+) -> list[Badge]:
+    return await get_badges(account_id.id)
+
+
+@badges_api_router.post("/api/v1/badges", response_model=Badge, status_code=HTTPStatus.CREATED)
+async def api_create_badge(
+    data: CreateBadge,
+    account_id: AccountId = Depends(check_account_id_exists),
+) -> Badge:
+    try:
+        validate_badge_data(data)
+    except ValueError as exc:
+        raise HTTPException(HTTPStatus.BAD_REQUEST, str(exc)) from exc
+    return await create_badge(account_id.id, data)
+
+
+@badges_api_router.get("/api/v1/badges/{badge_id}", response_model=Badge)
+async def api_get_badge(
+    badge_id: str,
+    account_id: AccountId = Depends(check_account_id_exists),
+) -> Badge:
+    return await _owned_badge(badge_id, account_id)
+
+
+@badges_api_router.put("/api/v1/badges/{badge_id}", response_model=Badge)
+async def api_update_badge(
+    badge_id: str,
+    data: CreateBadge,
+    account_id: AccountId = Depends(check_account_id_exists),
+) -> Badge:
+    try:
+        validate_badge_data(data)
+    except ValueError as exc:
+        raise HTTPException(HTTPStatus.BAD_REQUEST, str(exc)) from exc
+    badge = await _owned_badge(badge_id, account_id)
+    return await update_badge(Badge(**{**badge.dict(), **data.dict()}))
+
+
+@badges_api_router.delete("/api/v1/badges/{badge_id}", response_model=SimpleStatus)
+async def api_delete_badge(
+    badge_id: str,
+    account_id: AccountId = Depends(check_account_id_exists),
+) -> SimpleStatus:
+    await _owned_badge(badge_id, account_id)
+    await delete_badge(account_id.id, badge_id)
+    return SimpleStatus(success=True, message="Badge deleted")
+
+
+@badges_api_router.get("/api/v1/badges/{badge_id}/claims", response_model=list[Claim])
+async def api_get_claims(
+    badge_id: str,
+    account_id: AccountId = Depends(check_account_id_exists),
+) -> list[Claim]:
+    await _owned_badge(badge_id, account_id)
+    return await get_claims(badge_id)
+
+
+@badges_api_router.get("/api/v1/badges/{badge_id}/claims.csv")
+async def api_export_claims(
+    badge_id: str,
+    account_id: AccountId = Depends(check_account_id_exists),
+) -> PlainTextResponse:
+    await _owned_badge(badge_id, account_id)
+    output = StringIO()
+    csv_writer = writer(output)
+    csv_writer.writerow(["badge_id", "passport_pubkey", "claimed_at", "award_event_id", "location_verified"])
+    for claim in await get_claims(badge_id):
+        csv_writer.writerow(
+            [
+                claim.badge_id,
+                claim.passport_pubkey,
+                claim.claimed_at.isoformat(),
+                claim.award_event_id or "",
+                claim.location_verified,
+            ]
         )
-    user_id = "admin" if ExtensionSettings.is_admin_only() else account.id
-    return await update_settings(user_id, data)
+    return PlainTextResponse(
+        output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="badge-{badge_id}-claims.csv"'},
+    )
 
 
+@badges_api_router.get("/api/v1/public/claims/{claim_token}", response_model=PublicBadge)
+async def api_get_public_badge(claim_token: str) -> PublicBadge:
+    badge = await get_badge_by_token(claim_token)
+    if not badge:
+        raise HTTPException(HTTPStatus.NOT_FOUND, "Badge not found.")
+    return _public_badge(badge)
+
+
+@badges_api_router.post("/api/v1/public/claims/{claim_token}", response_model=ClaimResult)
+async def api_claim_badge(claim_token: str, data: ClaimRequest) -> ClaimResult:
+    try:
+        claim, created = await claim_badge(claim_token, data)
+    except ValueError as exc:
+        status = HTTPStatus.NOT_FOUND if str(exc) == "Badge not found" else HTTPStatus.BAD_REQUEST
+        raise HTTPException(status, str(exc)) from exc
+    return ClaimResult(claim=claim, created=created)
+
+
+@badges_api_router.get(
+    "/api/v1/public/passports/{passport_pubkey}/badges",
+    response_model=list[PassportBadge],
+)
+async def api_get_passport_badges(passport_pubkey: str) -> list[PassportBadge]:
+    return await get_passport_badges(passport_pubkey)

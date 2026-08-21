@@ -1,305 +1,215 @@
 window.PageBadges = {
   template: '#page-badges',
   delimiters: ['${', '}'],
-  data: function () {
+  data() {
     return {
-      currencyOptions: ['sat'],
-      settingsFormDialog: {
+      badges: [],
+      loading: false,
+      settings: {
+        configured: false,
+        issuer_pubkey: null,
+        issuer_npub: null
+      },
+      settingsDialog: {
+        show: false,
+        data: {issuer_nsec: ''}
+      },
+      badgeColumns: [
+        {name: 'name', label: 'Name', field: 'name', align: 'left'},
+        {name: 'active', label: 'Active', field: 'is_active', align: 'left'},
+        {name: 'actions', label: '', field: 'actions', align: 'right'}
+      ],
+      claimColumns: [
+        {
+          name: 'passport_pubkey',
+          label: 'Passport public key',
+          field: 'passport_pubkey',
+          align: 'left'
+        },
+        {
+          name: 'claimed_at',
+          label: 'Claimed',
+          field: 'claimed_at',
+          align: 'left'
+        },
+        {
+          name: 'location_verified',
+          label: 'Location',
+          field: 'location_verified',
+          align: 'left'
+        },
+        {
+          name: 'award_event_id',
+          label: 'Award event',
+          field: 'award_event_id',
+          align: 'left'
+        }
+      ],
+      badgeDialog: {
         show: false,
         data: {}
       },
-
-      ownerDataFormDialog: {
+      qrDialog: {
         show: false,
-        data: {
-          name: null,
-          
-        }
+        badge: null
       },
-      ownerDataList: [],
-      ownerDataTable: {
-        search: '',
-        loading: false,
-        columns: [
-          {"name": "name", "align": "left", "label": "Name", "field": "name", "sortable": true},
-          {"name": "updated_at", "align": "left", "label": "Updated At", "field": "updated_at", "sortable": true},
-          {"name": "id", "align": "left", "label": "ID", "field": "id", "sortable": true},
-          
-        ],
-        pagination: {
-          sortBy: 'updated_at',
-          rowsPerPage: 10,
-          page: 1,
-          descending: true,
-          rowsNumber: 10
-        }
-      },
-
-      clientDataFormDialog: {
+      claimsDialog: {
         show: false,
-        ownerData: {label: 'All Owner Data', value: ''},
-        data: {}
-      },
-      clientDataList: [],
-      clientDataTable: {
-        search: '',
-        loading: false,
-        columns: [
-          {"name": "name", "align": "left", "label": "Name", "field": "name", "sortable": true},
-          {"name": "updated_at", "align": "left", "label": "Updated At", "field": "updated_at", "sortable": true},
-          {"name": "id", "align": "left", "label": "ID", "field": "id", "sortable": true},
-          
-        ],
-        pagination: {
-          sortBy: 'updated_at',
-          rowsPerPage: 10,
-          page: 1,
-          descending: true,
-          rowsNumber: 10
-        }
+        badge: null,
+        claims: [],
+        loading: false
       }
     }
   },
-  watch: {
-    'ownerDataTable.search': {
-      handler() {
-        const props = {}
-        if (this.ownerDataTable.search) {
-          props['search'] = this.ownerDataTable.search
-        }
-        this.getOwnerData()
-      }
-    },
-    'clientDataTable.search': {
-      handler() {
-        const props = {}
-        if (this.clientDataTable.search) {
-          props['search'] = this.clientDataTable.search
-        }
-        this.getClientData()
-      }
-    },
-    'clientDataFormDialog.ownerData.value': {
-      handler() {
-        const props = {}
-        if (this.clientDataTable.search) {
-          props['search'] = this.clientDataTable.search
-        }
-        this.getClientData()
-      }
+  computed: {
+    badgeDialogTitle() {
+      return this.badgeDialog.data.id ? 'Edit badge' : 'New badge'
     }
   },
-
   methods: {
-    //////////////// Settings ////////////////////////
-    async updateSettings() {
-      
+    claimUrl(badge) {
+      return `${window.location.origin}/badges/api/v1/public/claims/${badge.claim_token}`
+    },
+    async showSettings() {
+      await this.getSettings()
+      this.settingsDialog.data = {issuer_nsec: ''}
+      this.settingsDialog.show = true
+    },
+    async getSettings() {
       try {
-        const data = {...this.settingsFormDialog.data}
-
-        await LNbits.api.request(
+        const {data} = await LNbits.api.request(
+          'GET',
+          '/badges/api/v1/settings',
+          null
+        )
+        this.settings = data
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+      }
+    },
+    async saveSettings() {
+      try {
+        const {data} = await LNbits.api.request(
           'PUT',
           '/badges/api/v1/settings',
           null,
-          data
+          this.settingsDialog.data
         )
-        this.settingsFormDialog.show = false
+        this.settings = data
+        this.settingsDialog.show = false
+        this.settingsDialog.data = {issuer_nsec: ''}
+        this.$q.notify({type: 'positive', message: 'Issuer key configured.'})
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       }
     },
-    async getSettings() {
-      
-      try {
-        const {data} = await LNbits.api.request(
-          'GET',
-          '/badges/api/v1/settings',
-          null
-        )
-        this.settingsFormDialog.data = data
-      } catch (error) {
-        LNbits.utils.notifyApiError(error)
+    newBadge() {
+      this.badgeDialog.data = {
+        name: '',
+        description: '',
+        image_url: '',
+        is_active: true,
+        starts_at: null,
+        ends_at: null,
+        latitude: null,
+        longitude: null,
+        radius_meters: null
+      }
+      this.badgeDialog.show = true
+    },
+    editBadge(badge) {
+      this.badgeDialog.data = {...badge}
+      this.badgeDialog.show = true
+    },
+    payload(data) {
+      return {
+        name: data.name,
+        description: data.description || null,
+        image_url: data.image_url || null,
+        is_active: data.is_active,
+        starts_at: data.starts_at || null,
+        ends_at: data.ends_at || null,
+        latitude: data.latitude === '' ? null : data.latitude,
+        longitude: data.longitude === '' ? null : data.longitude,
+        radius_meters: data.radius_meters === '' ? null : data.radius_meters
       }
     },
-    async showSettingsDataForm() {
-      await this.getSettings()
-      this.settingsFormDialog.show = true
-    },
-
-    //////////////// Owner Data ////////////////////////
-    async showNewOwnerDataForm() {
-      this.ownerDataFormDialog.data = {
-          name: null,
-          
-      }
-      this.ownerDataFormDialog.show = true
-    },
-    async showEditOwnerDataForm(data) {
-      this.ownerDataFormDialog.data = {...data}
-      this.ownerDataFormDialog.show = true
-    },
-    async saveOwnerData() {
-      
+    async saveBadge() {
       try {
-        const data = {extra: {}, ...this.ownerDataFormDialog.data}
+        const data = this.badgeDialog.data
         const method = data.id ? 'PUT' : 'POST'
-        const entry = data.id ? `/${data.id}` : ''
-        await LNbits.api.request(
-          method,
-          '/badges/api/v1/owner_data' + entry,
-          null,
-          data
-        )
-        this.getOwnerData()
-        this.ownerDataFormDialog.show = false
+        const url = data.id
+          ? `/badges/api/v1/badges/${data.id}`
+          : '/badges/api/v1/badges'
+        await LNbits.api.request(method, url, null, this.payload(data))
+        this.badgeDialog.show = false
+        await this.getBadges()
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       }
     },
-
-    async getOwnerData(props) {
-      
+    async getBadges() {
+      this.loading = true
       try {
-        this.ownerDataTable.loading = true
-        const params = LNbits.utils.prepareFilterQuery(
-          this.ownerDataTable,
-          props
-        )
         const {data} = await LNbits.api.request(
           'GET',
-          `/badges/api/v1/owner_data/paginated?${params}`,
+          '/badges/api/v1/badges',
           null
         )
-        this.ownerDataList = data.data
-        this.ownerDataTable.pagination.rowsNumber = data.total
+        this.badges = data
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       } finally {
-        this.ownerDataTable.loading = false
+        this.loading = false
       }
     },
-    async deleteOwnerData(ownerDataId) {
+    async deleteBadge(badge) {
       await LNbits.utils
-        .confirmDialog('Are you sure you want to delete this Owner Data?')
+        .confirmDialog(`Delete badge "${badge.name}"?`)
         .onOk(async () => {
           try {
-            
             await LNbits.api.request(
               'DELETE',
-              '/badges/api/v1/owner_data/' + ownerDataId,
+              `/badges/api/v1/badges/${badge.id}`,
               null
             )
-            await this.getOwnerData()
+            await this.getBadges()
           } catch (error) {
             LNbits.utils.notifyApiError(error)
           }
         })
     },
-    async exportOwnerDataCSV() {
-      await LNbits.utils.exportCSV(
-        this.ownerDataTable.columns,
-        this.ownerDataList,
-        'owner_data_' + new Date().toISOString().slice(0, 10) + '.csv'
-      )
+    showQr(badge) {
+      this.qrDialog.badge = badge
+      this.qrDialog.show = true
     },
-
-    //////////////// Client Data ////////////////////////
-    async showEditClientDataForm(data) {
-      this.clientDataFormDialog.data = {...data}
-      this.clientDataFormDialog.show = true
+    copyClaimUrl(badge) {
+      LNbits.utils.copyText(this.claimUrl(badge), 'Claim API URL copied')
     },
-    async saveClientData() {
-      
+    async showClaims(badge) {
+      this.claimsDialog.badge = badge
+      this.claimsDialog.claims = []
+      this.claimsDialog.show = true
+      this.claimsDialog.loading = true
       try {
-        const data = {extra: {}, ...this.clientDataFormDialog.data}
-        const method = data.id ? 'PUT' : 'POST'
-        const entry = data.id ? `/${data.id}` : ''
-        await LNbits.api.request(
-          method,
-          '/badges/api/v1/client_data' + entry,
-          null,
-          data
-        )
-        this.getClientData()
-        this.clientDataFormDialog.show = false
-      } catch (error) {
-        LNbits.utils.notifyApiError(error)
-      }
-    },
-
-    async getClientData(props) {
-      
-      try {
-        this.clientDataTable.loading = true
-        let params = LNbits.utils.prepareFilterQuery(
-          this.clientDataTable,
-          props
-        )
-        const ownerDataId = this.clientDataFormDialog.ownerData.value
-        if (ownerDataId) {
-          params += `&owner_data_id=${ownerDataId}`
-        }
         const {data} = await LNbits.api.request(
           'GET',
-          `/badges/api/v1/client_data/paginated?${params}`,
+          `/badges/api/v1/badges/${badge.id}/claims`,
           null
         )
-        this.clientDataList = data.data
-        this.clientDataTable.pagination.rowsNumber = data.total
+        this.claimsDialog.claims = data
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       } finally {
-        this.clientDataTable.loading = false
+        this.claimsDialog.loading = false
       }
     },
-    async deleteClientData(clientDataId) {
-      await LNbits.utils
-        .confirmDialog('Are you sure you want to delete this Client Data?')
-        .onOk(async () => {
-          try {
-            
-            await LNbits.api.request(
-              'DELETE',
-              '/badges/api/v1/client_data/' + clientDataId,
-              null
-            )
-            await this.getClientData()
-          } catch (error) {
-            LNbits.utils.notifyApiError(error)
-          }
-        })
-    },
-
-    async exportClientDataCSV() {
-      await LNbits.utils.exportCSV(
-        this.clientDataTable.columns,
-        this.clientDataList,
-        'client_data_' + new Date().toISOString().slice(0, 10) + '.csv'
-      )
-    },
-
-    //////////////// Utils ////////////////////////
-    dateFromNow(date) {
-      return moment(date).fromNow()
-    },
-    async fetchCurrencies() {
-      try {
-        const response = await LNbits.api.request('GET', '/api/v1/currencies')
-        this.currencyOptions = ['sat', ...response.data]
-      } catch (error) {
-        LNbits.utils.notifyApiError(error)
-      }
+    exportClaims(badge) {
+      window.open(`/badges/api/v1/badges/${badge.id}/claims.csv`, '_blank')
     }
   },
-  ///////////////////////////////////////////////////
-  //////LIFECYCLE FUNCTIONS RUNNING ON PAGE LOAD/////
-  ///////////////////////////////////////////////////
-  async created() {
-    this.fetchCurrencies()
-    this.getOwnerData()
-    this.getClientData()
-
-    
-    
+  created() {
+    this.getSettings()
+    this.getBadges()
   }
 }

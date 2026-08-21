@@ -1,7 +1,3 @@
-`The README.md typically serves as a guide for using the extension.`
+# Badges issuer extension
 
-# badges - An [LNbits](https://github.com/lnbits/lnbits) Extension
-
-## A Starter Template for Your Own Extension
-
-This extension was created with The LNbits Extension Builder
+Create and publish NIP-58 badges from LNbits. The companion passport/scanner app is intentionally outside this extension.

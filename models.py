@@ -1,100 +1,86 @@
 from datetime import datetime, timezone
 
-from lnbits.db import FilterModel
 from pydantic import BaseModel, Field
 
 
-########################### Owner Data ############################
-class CreateOwnerData(BaseModel):
-    name: str | None
-    
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
-class OwnerData(BaseModel):
+class CreateBadge(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    image_url: str | None = Field(default=None, max_length=2000)
+    is_active: bool = True
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    radius_meters: float | None = Field(default=None, gt=0)
+
+
+class Badge(CreateBadge):
     id: str
     user_id: str
-    name: str | None
-    
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    claim_token: str
+    definition_event_id: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
-class PublicOwnerData(BaseModel):
-    pass
-
-
-
-
-class OwnerDataFilters(FilterModel):
-    __search_fields__ = [
-        "name",
-    ]
-
-    __sort_fields__ = [
-        "name",
-        
-        "created_at",
-        "updated_at",
-    ]
-
-    created_at: datetime | None
-    updated_at: datetime | None
-
-
-################################# Client Data ###########################
-
-
-class CreateClientData(BaseModel):
-    name: str | None
-    
-
-
-class ClientData(BaseModel):
+class PublicBadge(BaseModel):
     id: str
-    owner_data_id: str
-    name: str | None
-    
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    name: str
+    description: str | None
+    image_url: str | None
+    is_active: bool
+    starts_at: datetime | None
+    ends_at: datetime | None
+    latitude: float | None
+    longitude: float | None
+    radius_meters: float | None
 
 
-class ClientDataPaymentRequest(BaseModel):
-    client_data_id: str
-    payment_hash: str | None = None
-    payment_request: str | None = None
+class ClaimRequest(BaseModel):
+    passport_pubkey: str = Field(
+        min_length=64,
+        max_length=64,
+        regex=r"^[0-9a-fA-F]{64}$",
+    )
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
 
 
-
-
-class ClientDataFilters(FilterModel):
-    __search_fields__ = [
-        "name",
-    ]
-
-    __sort_fields__ = [
-        "name",
-        
-        "created_at",
-        "updated_at",
-    ]
-
-    created_at: datetime | None
-    updated_at: datetime | None
-
-
-############################ Settings #############################
-class ExtensionSettings(BaseModel):
-    name: str | None
-    
-
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @classmethod
-    def is_admin_only(cls) -> bool:
-        return bool("False" == "True")
-
-
-class UserExtensionSettings(ExtensionSettings):
+class Claim(BaseModel):
     id: str
+    badge_id: str
+    passport_pubkey: str
+    award_event_id: str | None
+    claimed_at: datetime
+    location_verified: bool
 
 
+class ClaimResult(BaseModel):
+    claim: Claim
+    created: bool
+
+
+class PassportBadge(PublicBadge):
+    claimed_at: datetime
+    location_verified: bool
+
+
+class StoredSettings(BaseModel):
+    owner_id: str
+    issuer_nsec_encrypted: str | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class IssuerSettingsUpdate(BaseModel):
+    issuer_nsec: str = Field(min_length=10, max_length=200)
+
+
+class IssuerSettingsResponse(BaseModel):
+    configured: bool
+    issuer_pubkey: str | None = None
+    issuer_npub: str | None = None

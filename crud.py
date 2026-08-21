@@ -1,207 +1,152 @@
-# Description: This file contains the CRUD operations for talking to the database.
+from datetime import datetime, timezone
 
-
-from lnbits.db import Database, Filters, Page
+from lnbits.db import Database
 from lnbits.helpers import urlsafe_short_hash
 
-from .models import (
-    ClientData,
-    ClientDataFilters,
-    CreateClientData,
-    CreateOwnerData,
-    ExtensionSettings,  #  
-    OwnerData,
-    OwnerDataFilters,
-    UserExtensionSettings,  #  
-)
+from .models import Badge, Claim, CreateBadge, PassportBadge, StoredSettings
 
 db = Database("ext_badges")
 
 
-########################### Owner Data ############################
-async def create_owner_data(user_id: str, data: CreateOwnerData) -> OwnerData:
-    owner_data = OwnerData(**data.dict(), id=urlsafe_short_hash(), user_id=user_id)
-    await db.insert("badges.owner_data", owner_data)
-    return owner_data
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
-async def get_owner_data(
-    user_id: str,
-    owner_data_id: str,
-) -> OwnerData | None:
-    return await db.fetchone(
-        """
-            SELECT * FROM badges.owner_data
-            WHERE id = :id AND user_id = :user_id
-        """,
-        {"id": owner_data_id, "user_id": user_id},
-        OwnerData,
-    )
-
-
-async def get_owner_data_by_id(
-    owner_data_id: str,
-) -> OwnerData | None:
-    return await db.fetchone(
-        """
-            SELECT * FROM badges.owner_data
-            WHERE id = :id
-        """,
-        {"id": owner_data_id},
-        OwnerData,
-    )
-
-
-async def get_owner_data_ids_by_user(
-    user_id: str,
-) -> list[str]:
-    rows: list[dict] = await db.fetchall(
-        """
-            SELECT DISTINCT id FROM badges.owner_data
-            WHERE user_id = :user_id
-        """,
-        {"user_id": user_id},
-    )
-
-    return [row["id"] for row in rows]
-
-
-async def get_owner_data_paginated(
-    user_id: str | None = None,
-    filters: Filters[OwnerDataFilters] | None = None,
-) -> Page[OwnerData]:
-    where = []
-    values = {}
-    if user_id:
-        where.append("user_id = :user_id")
-        values["user_id"] = user_id
-
-    return await db.fetch_page(
-        "SELECT * FROM badges.owner_data",
-        where=where,
-        values=values,
-        filters=filters,
-        model=OwnerData,
-    )
-
-
-async def update_owner_data(data: OwnerData) -> OwnerData:
-    await db.update("badges.owner_data", data)
-    return data
-
-
-async def delete_owner_data(user_id: str, owner_data_id: str) -> None:
-    await db.execute(
-        """
-            DELETE FROM badges.owner_data
-            WHERE id = :id AND user_id = :user_id
-        """,
-        {"id": owner_data_id, "user_id": user_id},
-    )
-
-
-################################# Client Data ###########################
-
-
-async def create_client_data(owner_data_id: str, data: CreateClientData) -> ClientData:
-    client_data = ClientData(**data.dict(), id=urlsafe_short_hash(), owner_data_id=owner_data_id)
-    await db.insert("badges.client_data", client_data)
-    return client_data
-
-
-async def get_client_data(
-    owner_data_id: str,
-    client_data_id: str,
-) -> ClientData | None:
-    return await db.fetchone(
-        """
-            SELECT * FROM badges.client_data
-            WHERE id = :id AND owner_data_id = :owner_data_id
-        """,
-        {"id": client_data_id, "owner_data_id": owner_data_id},
-        ClientData,
-    )
-
-
-async def get_client_data_by_id(
-    client_data_id: str,
-) -> ClientData | None:
-    return await db.fetchone(
-        """
-            SELECT * FROM badges.client_data
-            WHERE id = :id
-        """,
-        {"id": client_data_id},
-        ClientData,
-    )
-
-
-async def get_client_data_paginated(
-    owner_data_ids: list[str] | None = None,
-    filters: Filters[ClientDataFilters] | None = None,
-) -> Page[ClientData]:
-
-    if not owner_data_ids:
-        return Page(data=[], total=0)
-
-    where = []
-    values = {}
-    id_clause = []
-    for i, item_id in enumerate(owner_data_ids):
-        # owner_data_ids are not user input, but DB entries, so this is safe
-        owner_data_id = f"owner_data_id__{i}"
-        id_clause.append(f"owner_data_id = :{owner_data_id}")
-        values[owner_data_id] = item_id
-    or_clause = " OR ".join(id_clause)
-    where.append(f"({or_clause})")
-
-    return await db.fetch_page(
-        "SELECT * FROM badges.client_data",
-        where=where,
-        values=values,
-        filters=filters,
-        model=ClientData,
-    )
-
-
-async def update_client_data(data: ClientData) -> ClientData:
-    await db.update("badges.client_data", data)
-    return data
-
-
-async def delete_client_data(owner_data_id: str, client_data_id: str) -> None:
-    await db.execute(
-        """
-            DELETE FROM badges.client_data
-            WHERE id = :id AND owner_data_id = :owner_data_id
-        """,
-        {"id": client_data_id, "owner_data_id": owner_data_id},
-    )
-
-
-############################ Settings #############################
-async def create_extension_settings(user_id: str, data: ExtensionSettings) -> ExtensionSettings:
-    settings = UserExtensionSettings(**data.dict(), id=user_id)
+async def create_extension_settings(owner_id: str, encrypted_nsec: str) -> StoredSettings:
+    settings = StoredSettings(owner_id=owner_id, issuer_nsec_encrypted=encrypted_nsec)
     await db.insert("badges.extension_settings", settings)
     return settings
 
 
-async def get_extension_settings(
-    user_id: str,
-) -> ExtensionSettings | None:
+async def get_extension_settings(owner_id: str) -> StoredSettings | None:
     return await db.fetchone(
-        """
-            SELECT * FROM badges.extension_settings
-            WHERE id = :user_id
-        """,
-        {"user_id": user_id},
-        ExtensionSettings,
+        "SELECT * FROM badges.extension_settings WHERE owner_id = :owner_id",
+        {"owner_id": owner_id},
+        StoredSettings,
     )
 
 
-async def update_extension_settings(user_id: str, data: ExtensionSettings) -> ExtensionSettings:
-    settings = UserExtensionSettings(**data.dict(), id=user_id)
+async def update_extension_settings(settings: StoredSettings) -> StoredSettings:
+    settings.updated_at = utc_now()
     await db.update("badges.extension_settings", settings)
     return settings
 
 
+async def create_badge(user_id: str, data: CreateBadge) -> Badge:
+    badge = Badge(
+        id=urlsafe_short_hash(),
+        user_id=user_id,
+        claim_token=urlsafe_short_hash(),
+        **data.dict(),
+    )
+    await db.insert("badges.badges", badge)
+    return badge
+
+
+async def get_badges(user_id: str) -> list[Badge]:
+    return await db.fetchall(
+        "SELECT * FROM badges.badges WHERE user_id = :user_id ORDER BY created_at DESC",
+        {"user_id": user_id},
+        model=Badge,
+    )
+
+
+async def get_badge(user_id: str, badge_id: str) -> Badge | None:
+    return await db.fetchone(
+        "SELECT * FROM badges.badges WHERE id = :id AND user_id = :user_id",
+        {"id": badge_id, "user_id": user_id},
+        Badge,
+    )
+
+
+async def get_badge_by_token(claim_token: str) -> Badge | None:
+    return await db.fetchone(
+        "SELECT * FROM badges.badges WHERE claim_token = :claim_token",
+        {"claim_token": claim_token},
+        Badge,
+    )
+
+
+async def update_badge(badge: Badge) -> Badge:
+    badge.updated_at = utc_now()
+    await db.update("badges.badges", badge)
+    return badge
+
+
+async def delete_badge(user_id: str, badge_id: str) -> None:
+    await db.execute(
+        "DELETE FROM badges.claims WHERE badge_id = :badge_id",
+        {"badge_id": badge_id},
+    )
+    await db.execute(
+        "DELETE FROM badges.badges WHERE id = :id AND user_id = :user_id",
+        {"id": badge_id, "user_id": user_id},
+    )
+
+
+async def get_claims(badge_id: str) -> list[Claim]:
+    return await db.fetchall(
+        "SELECT * FROM badges.claims WHERE badge_id = :badge_id ORDER BY claimed_at DESC",
+        {"badge_id": badge_id},
+        model=Claim,
+    )
+
+
+async def get_claim(badge_id: str, passport_pubkey: str) -> Claim | None:
+    return await db.fetchone(
+        """
+        SELECT * FROM badges.claims
+        WHERE badge_id = :badge_id AND passport_pubkey = :passport_pubkey
+        """,
+        {"badge_id": badge_id, "passport_pubkey": passport_pubkey},
+        Claim,
+    )
+
+
+async def create_claim(badge_id: str, passport_pubkey: str, location_verified: bool) -> tuple[Claim, bool]:
+    claim = Claim(
+        id=urlsafe_short_hash(),
+        badge_id=badge_id,
+        passport_pubkey=passport_pubkey,
+        award_event_id=None,
+        claimed_at=utc_now(),
+        location_verified=location_verified,
+    )
+    await db.execute(
+        f"""
+        INSERT INTO badges.claims (
+            id, badge_id, passport_pubkey, award_event_id,
+            claimed_at, location_verified
+        ) VALUES (
+            :id, :badge_id, :passport_pubkey, :award_event_id,
+            {db.timestamp_placeholder("claimed_at")}, :location_verified
+        )
+        ON CONFLICT (badge_id, passport_pubkey) DO NOTHING
+        """,
+        claim.dict(),
+    )
+    stored = await get_claim(badge_id, passport_pubkey)
+    assert stored is not None
+    return stored, stored.id == claim.id
+
+
+async def update_claim(claim: Claim) -> Claim:
+    await db.update("badges.claims", claim)
+    return claim
+
+
+async def get_passport_badges(passport_pubkey: str) -> list[PassportBadge]:
+    return await db.fetchall(
+        """
+        SELECT
+            b.id, b.name, b.description, b.image_url, b.is_active,
+            b.starts_at, b.ends_at, b.latitude, b.longitude, b.radius_meters,
+            c.claimed_at, c.location_verified
+        FROM badges.claims c
+        JOIN badges.badges b ON b.id = c.badge_id
+        WHERE c.passport_pubkey = :passport_pubkey
+        ORDER BY c.claimed_at DESC
+        """,
+        {"passport_pubkey": passport_pubkey},
+        model=PassportBadge,
+    )

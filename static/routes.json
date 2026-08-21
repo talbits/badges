@@ -4,11 +4,5 @@
     "name": "PageBadges",
     "template": "/badges/static/index.vue",
     "component": "/badges/static/index.js"
-  },
-  {
-    "path": "/badges/:id",
-    "name": "PageBadgesPublic",
-    "template": "/badges/static/public_page.vue",
-    "component": "/badges/static/public_page.js"
   }
 ]

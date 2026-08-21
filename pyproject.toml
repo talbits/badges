@@ -2,10 +2,13 @@
 name = "badges"
 version = "0.1.0"
 requires-python = ">=3.10,<3.13"
-description = "<<>>"
+description = "NIP-58 badge issuer for LNbits."
 authors = []
-urls = { Homepage = "https://lnbits.com", Repository = "https://github.com/lnbits/badges" }
-dependencies = [ "lnbits>=1.4.0" ]
+urls = { Homepage = "https://lnbits.com", Repository = "https://github.com/talbits/badges" }
+dependencies = [
+    "lnbits>=1.4.0",
+    "nostr-sdk~=0.44.0",
+]
 
 [tool.poetry]
 package-mode = false
@@ -35,6 +38,7 @@ log_cli = false
 testpaths = [
   "tests"
 ]
+pythonpath = ["../nostrclient"]
 
 [tool.black]
 line-length = 120
