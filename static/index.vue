@@ -368,21 +368,21 @@
       <q-card v-if="qrDialog.badge" class="q-pa-lg lnbits__dialog-card">
         <div class="text-h6 q-mb-md" v-text="qrDialog.badge.name"></div>
         <lnbits-qrcode
-          :href="claimUrl(qrDialog.badge)"
-          :value="claimUrl(qrDialog.badge)"
+          :href="`nostr://${badgeAddress(qrDialog.badge)}`"
+          :value="`nostr://${badgeAddress(qrDialog.badge)}`"
           class="q-mb-md"
         ></lnbits-qrcode>
         <q-input
           readonly
-          :model-value="claimUrl(qrDialog.badge)"
-          label="Claim API URL for the companion app"
+          :model-value="badgeAddress(qrDialog.badge)"
+          label="Nostr badge address"
         ></q-input>
         <div class="row q-mt-md">
           <q-btn
             color="primary"
             unelevated
-            label="Copy link"
-            @click="copyClaimUrl(qrDialog.badge)"
+            label="Copy address"
+            @click="copyBadgeAddress(qrDialog.badge)"
           ></q-btn>
           <q-btn
             flat

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from lnbits.db import Database
 from lnbits.helpers import urlsafe_short_hash
 
-from .models import Badge, Claim, CreateBadge, PassportBadge, StoredSettings
+from .models import Badge, Claim, CreateBadge, StoredSettings
 
 db = Database("ext_badges")
 
@@ -44,11 +44,15 @@ async def get_extension_settings_by_pubkey(issuer_pubkey: str) -> StoredSettings
     )
 
 
+async def get_issuer_pubkeys() -> list[str]:
+    rows = await db.fetchall("SELECT issuer_pubkey FROM badges.extension_settings WHERE issuer_pubkey IS NOT NULL")
+    return [row["issuer_pubkey"] for row in rows]
+
+
 async def create_badge(issuer_pubkey: str, data: CreateBadge) -> Badge:
     badge = Badge(
         id=urlsafe_short_hash(),
         issuer_pubkey=issuer_pubkey,
-        claim_token=urlsafe_short_hash(),
         **data.dict(),
     )
     await db.insert("badges.badges", badge)
@@ -67,14 +71,6 @@ async def get_badge(issuer_pubkey: str, badge_id: str) -> Badge | None:
     return await db.fetchone(
         "SELECT * FROM badges.badges WHERE id = :id AND issuer_pubkey = :issuer_pubkey",
         {"id": badge_id, "issuer_pubkey": issuer_pubkey},
-        Badge,
-    )
-
-
-async def get_badge_by_token(claim_token: str) -> Badge | None:
-    return await db.fetchone(
-        "SELECT * FROM badges.badges WHERE claim_token = :claim_token",
-        {"claim_token": claim_token},
         Badge,
     )
 
@@ -145,21 +141,3 @@ async def create_claim(badge_id: str, passport_pubkey: str, location_verified: b
 async def update_claim(claim: Claim) -> Claim:
     await db.update("badges.claims", claim)
     return claim
-
-
-async def get_passport_badges(passport_pubkey: str) -> list[PassportBadge]:
-    return await db.fetchall(
-        """
-        SELECT
-            b.id, b.issuer_pubkey, b.definition_event_id, b.name, b.description,
-            b.is_active,
-            b.starts_at, b.ends_at, b.latitude, b.longitude, b.radius_meters,
-            c.claimed_at, c.location_verified
-        FROM badges.claims c
-        JOIN badges.badges b ON b.id = c.badge_id
-        WHERE c.passport_pubkey = :passport_pubkey
-        ORDER BY c.claimed_at DESC
-        """,
-        {"passport_pubkey": passport_pubkey},
-        model=PassportBadge,
-    )

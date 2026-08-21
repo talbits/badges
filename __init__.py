@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from .crud import db
+from .tasks import badges_start, badges_stop
 from .views import badges_generic_router
 from .views_api import badges_api_router
 
@@ -16,4 +17,10 @@ badges_static_files = [
 ]
 
 
-__all__ = ["badges_ext", "badges_static_files", "db"]
+__all__ = [
+    "badges_ext",
+    "badges_start",
+    "badges_static_files",
+    "badges_stop",
+    "db",
+]

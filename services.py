@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from math import asin, cos, radians, sin, sqrt
 
@@ -6,7 +7,7 @@ from lnbits.helpers import decrypt_internal_message, encrypt_internal_message
 from .crud import (
     create_claim,
     create_extension_settings,
-    get_badge_by_token,
+    get_badge,
     get_claim,
     get_extension_settings,
     get_extension_settings_by_pubkey,
@@ -21,6 +22,13 @@ from .models import (
     CreateBadge,
     IssuerSettingsResponse,
     StoredSettings,
+)
+
+DEFAULT_RELAYS = (
+    "wss://relay.damus.io",
+    "wss://nos.lol",
+    "wss://relay.primal.net",
+    "wss://relay.nostr.com",
 )
 
 
@@ -176,6 +184,7 @@ async def publish_badge_definition(badge: Badge, force: bool = False) -> Badge:
     )
     key.sign_event(event)
     badge.definition_event_id = _publish_event(event)
+    badge.relay_hints = list(DEFAULT_RELAYS)
     return await update_badge(badge)
 
 
@@ -203,21 +212,48 @@ async def publish_badge_award(badge: Badge, claim: Claim) -> Claim:
     return await update_claim(claim)
 
 
-async def claim_badge(claim_token: str, request: ClaimRequest) -> tuple[Claim, bool]:
-    badge = await get_badge_by_token(claim_token)
-    if not badge:
-        raise ValueError("Badge not found")
+async def _award_badge(badge: Badge, request: ClaimRequest) -> tuple[Claim, bool]:
     existing = await get_claim(badge.id, request.passport_pubkey)
-    was_awarded = bool(existing and existing.award_event_id)
-    if was_awarded:
+    if existing and existing.award_event_id:
         return existing, False
     if not existing:
         _check_claim_window(badge)
         location_verified = _location_verified(badge, request)
-    await publish_badge_definition(badge)
-    if not existing:
         existing, created = await create_claim(badge.id, request.passport_pubkey, location_verified)
         if not created and existing.award_event_id:
             return existing, False
     claim = await publish_badge_award(badge, existing)
-    return claim, not was_awarded
+    return claim, True
+
+
+async def process_claim_event(event: dict) -> tuple[Claim, bool] | None:
+    if event.get("kind") != 4:
+        return None
+    public_key = event.get("pubkey")
+    content = event.get("content")
+    if not public_key or not content:
+        return None
+
+    for tag in event.get("tags", []):
+        if len(tag) < 2 or tag[0] != "p":
+            continue
+        settings = await get_extension_settings_by_pubkey(tag[1])
+        if not settings:
+            continue
+        key = _settings_key(settings)
+        try:
+            payload = json.loads(key.decrypt_message(content, public_key))
+        except Exception as exc:
+            raise ValueError("Invalid encrypted claim message") from exc
+        if payload.get("type") not in {"claim_poap", "claim_badge"}:
+            return None
+        badge = await get_badge(settings.issuer_pubkey, payload.get("badge_id", ""))
+        if not badge:
+            raise ValueError("Badge not found")
+        request = ClaimRequest(
+            passport_pubkey=public_key,
+            latitude=payload.get("lat", payload.get("latitude")),
+            longitude=payload.get("long", payload.get("longitude")),
+        )
+        return await _award_badge(badge, request)
+    return None

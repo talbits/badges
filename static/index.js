@@ -108,8 +108,8 @@ window.PageBadges = {
     }
   },
   methods: {
-    claimUrl(badge) {
-      return `${window.location.origin}/badges/api/v1/public/claims/${badge.claim_token}`
+    badgeAddress(badge) {
+      return badge.naddr || `30009:${badge.issuer_pubkey}:${badge.id}`
     },
     async showSettings() {
       await this.getSettings()
@@ -349,8 +349,8 @@ window.PageBadges = {
       this.qrDialog.badge = badge
       this.qrDialog.show = true
     },
-    copyClaimUrl(badge) {
-      LNbits.utils.copyText(this.claimUrl(badge), 'Claim API URL copied')
+    copyBadgeAddress(badge) {
+      LNbits.utils.copyText(this.badgeAddress(badge), 'Nostr address copied')
     },
     async showClaims(badge) {
       this.claimsDialog.badge = badge

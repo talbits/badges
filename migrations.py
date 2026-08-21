@@ -118,6 +118,45 @@ async def m002_issuer_pubkey(db):
     await db.execute("ALTER TABLE badges.badges_new RENAME TO badges")
 
 
+async def m003_remove_claim_token(db):
+    await db.execute(
+        f"""
+        CREATE TABLE badges.badges_new (
+            id TEXT PRIMARY KEY,
+            issuer_pubkey TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            image_url TEXT NOT NULL,
+            definition_event_id TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT true,
+            starts_at TIMESTAMP,
+            ends_at TIMESTAMP,
+            latitude REAL,
+            longitude REAL,
+            radius_meters REAL,
+            created_at TIMESTAMP NOT NULL DEFAULT {db.timestamp_now},
+            updated_at TIMESTAMP NOT NULL DEFAULT {db.timestamp_now}
+        );
+        """
+    )
+    await db.execute(
+        """
+        INSERT INTO badges.badges_new (
+            id, issuer_pubkey, name, description, image_url, definition_event_id,
+            is_active, starts_at, ends_at, latitude, longitude, radius_meters,
+            created_at, updated_at
+        )
+        SELECT
+            id, issuer_pubkey, name, description, image_url, definition_event_id,
+            is_active, starts_at, ends_at, latitude, longitude, radius_meters,
+            created_at, updated_at
+        FROM badges.badges
+        """
+    )
+    await db.execute("DROP TABLE badges.badges")
+    await db.execute("ALTER TABLE badges.badges_new RENAME TO badges")
+
+
 def _issuer_pubkey(encrypted_nsec: str) -> str:
     from lnbits.helpers import decrypt_internal_message
 

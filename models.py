@@ -22,24 +22,11 @@ class CreateBadge(BaseModel):
 class Badge(CreateBadge):
     id: str
     issuer_pubkey: str
-    claim_token: str
     definition_event_id: str | None = None
+    naddr: str | None = Field(default=None, no_database=True)
+    relay_hints: list[str] = Field(default_factory=list, no_database=True)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
-
-
-class PublicBadge(BaseModel):
-    id: str
-    issuer_pubkey: str
-    definition_event_id: str
-    name: str
-    description: str | None
-    is_active: bool
-    starts_at: datetime | None
-    ends_at: datetime | None
-    latitude: float | None
-    longitude: float | None
-    radius_meters: float | None
 
 
 class ClaimRequest(BaseModel):
@@ -57,16 +44,6 @@ class Claim(BaseModel):
     badge_id: str
     passport_pubkey: str
     award_event_id: str | None
-    claimed_at: datetime
-    location_verified: bool
-
-
-class ClaimResult(BaseModel):
-    claim: Claim
-    created: bool
-
-
-class PassportBadge(PublicBadge):
     claimed_at: datetime
     location_verified: bool
 

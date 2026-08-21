@@ -1,69 +1,113 @@
+import json
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 from nostrclient.nostr.key import PrivateKey  # type: ignore[import]
 
-from badges.crud import create_badge, delete_badge, get_badge, get_badges, update_badge  # type: ignore[import]
-from badges.models import ClaimRequest, CreateBadge  # type: ignore[import]
-from badges.services import claim_badge, configure_issuer  # type: ignore[import]
+from badges.crud import create_badge, delete_badge, get_badge, get_badges  # type: ignore[import]
+from badges.models import CreateBadge  # type: ignore[import]
+from badges.services import (  # type: ignore[import]
+    configure_issuer,
+    process_claim_event,
+    publish_badge_definition,
+)
+
+
+def claim_event(passport: PrivateKey, issuer_pubkey: str, badge_id: str, **payload):
+    body = {"type": "claim_poap", "badge_id": badge_id, **payload}
+    return {
+        "kind": 4,
+        "pubkey": passport.public_key.hex(),
+        "content": passport.encrypt_message(json.dumps(body), issuer_pubkey),
+        "tags": [["p", issuer_pubkey]],
+    }
 
 
 @pytest.mark.asyncio
-async def test_badge_crud_and_idempotent_claim(monkeypatch):
+async def test_nip58_claim_dm_creates_idempotent_award(monkeypatch):
     published = []
-
-    def fake_publish(event):
-        published.append(event)
-        return event.id
-
-    monkeypatch.setattr("badges.services._publish_event", fake_publish)
-    user_id = uuid4().hex
-    settings = await configure_issuer(user_id, PrivateKey().bech32())
+    monkeypatch.setattr(
+        "badges.services._publish_event",
+        lambda event: published.append(event) or event.id,
+    )
+    settings = await configure_issuer(uuid4().hex, PrivateKey().bech32())
     assert settings.issuer_pubkey
     badge = await create_badge(
         settings.issuer_pubkey,
         CreateBadge(name="Opening day", image_url="https://example.com/badge.png"),
     )
+    await publish_badge_definition(badge)
 
-    assert badge.issuer_pubkey == settings.issuer_pubkey
-    assert badge.claim_token
-    assert len(await get_badges(settings.issuer_pubkey)) == 1
-
-    claim_request = ClaimRequest(passport_pubkey="a" * 64)
-    claim, created = await claim_badge(badge.claim_token, claim_request)
+    passport = PrivateKey()
+    event = claim_event(passport, settings.issuer_pubkey, badge.id)
+    claim, created = await process_claim_event(event)
     assert created is True
-    assert claim.badge_id == badge.id
-    assert claim.award_event_id
+    assert claim.passport_pubkey == passport.public_key.hex()
+    assert claim.location_verified is False
     assert len(published) == 2
-    definition, award = published
-    assert definition.id == definition.to_dict()["id"]
-    assert definition.kind == 30009
-    assert definition.content == badge.name
-    assert ["d", badge.id] in definition.tags
-    assert award.id == award.to_dict()["id"]
-    assert award.kind == 8
-    assert ["a", f"30009:{definition.public_key}:{badge.id}"] in award.tags
-    assert ["p", claim.passport_pubkey] in award.tags
 
-    duplicate, created = await claim_badge(badge.claim_token, claim_request)
+    definition, award = published
+    assert definition.kind == 30009
+    assert ["d", badge.id] in definition.tags
+    assert ["image", badge.image_url] in definition.tags
+    assert award.kind == 8
+    assert ["a", f"30009:{settings.issuer_pubkey}:{badge.id}"] in award.tags
+    assert ["p", passport.public_key.hex()] in award.tags
+
+    duplicate, created = await process_claim_event(event)
     assert created is False
     assert duplicate.id == claim.id
-
-    badge.name = "Opening day updated"
-    await update_badge(badge)
-    updated = await get_badge(settings.issuer_pubkey, badge.id)
-    assert updated is not None
-    assert updated.name == "Opening day updated"
+    assert len(published) == 2
 
     await delete_badge(settings.issuer_pubkey, badge.id)
     assert await get_badge(settings.issuer_pubkey, badge.id) is None
 
 
 @pytest.mark.asyncio
-async def test_badge_claim_window():
+async def test_nip58_claim_dm_checks_location_and_window(monkeypatch):
+    monkeypatch.setattr("badges.services._publish_event", lambda event: event.id)
+    settings = await configure_issuer(uuid4().hex, PrivateKey().bech32())
+    assert settings.issuer_pubkey
     badge = await create_badge(
-        uuid4().hex,
+        settings.issuer_pubkey,
+        CreateBadge(
+            name="Location badge",
+            image_url="https://example.com/location.png",
+            latitude=38.7223,
+            longitude=-9.1393,
+            radius_meters=100,
+        ),
+    )
+    passport = PrivateKey()
+
+    with pytest.raises(ValueError, match="Location permission is required"):
+        await process_claim_event(claim_event(passport, settings.issuer_pubkey, badge.id))
+    with pytest.raises(ValueError, match="outside the badge location"):
+        await process_claim_event(
+            claim_event(
+                passport,
+                settings.issuer_pubkey,
+                badge.id,
+                lat=38.73,
+                long=-9.1393,
+            )
+        )
+
+    in_range = await process_claim_event(
+        claim_event(
+            passport,
+            settings.issuer_pubkey,
+            badge.id,
+            lat=38.7223,
+            long=-9.1393,
+        )
+    )
+    assert in_range is not None
+    assert in_range[0].location_verified is True
+
+    later = await create_badge(
+        settings.issuer_pubkey,
         CreateBadge(
             name="Later",
             image_url="https://example.com/later.png",
@@ -71,4 +115,6 @@ async def test_badge_claim_window():
         ),
     )
     with pytest.raises(ValueError, match="not available yet"):
-        await claim_badge(badge.claim_token, ClaimRequest(passport_pubkey="b" * 64))
+        await process_claim_event(claim_event(PrivateKey(), settings.issuer_pubkey, later.id))
+
+    assert len(await get_badges(settings.issuer_pubkey)) >= 2
