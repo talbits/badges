@@ -150,8 +150,8 @@ def _publish_event(event) -> str:
     return event.id
 
 
-async def publish_badge_definition(badge: Badge) -> Badge:
-    if badge.definition_event_id:
+async def publish_badge_definition(badge: Badge, force: bool = False) -> Badge:
+    if badge.definition_event_id and not force:
         return badge
     settings = await get_extension_settings_by_pubkey(badge.issuer_pubkey)
     key = _settings_key(settings) if settings else None

@@ -35,6 +35,7 @@ from .services import (
     configure_issuer,
     get_issuer_pubkey,
     get_issuer_settings,
+    publish_badge_definition,
     validate_badge_data,
 )
 
@@ -42,6 +43,11 @@ badges_api_router = APIRouter()
 
 
 def _public_badge(badge: Badge) -> PublicBadge:
+    if not badge.definition_event_id:
+        raise HTTPException(
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            "Badge definition is not published yet.",
+        )
     return PublicBadge(**badge.dict())
 
 
@@ -96,7 +102,12 @@ async def api_create_badge(
         validate_badge_data(data)
     except ValueError as exc:
         raise HTTPException(HTTPStatus.BAD_REQUEST, str(exc)) from exc
-    return await create_badge(issuer_pubkey, data)
+    badge = await create_badge(issuer_pubkey, data)
+    try:
+        return await publish_badge_definition(badge)
+    except ValueError as exc:
+        await delete_badge(issuer_pubkey, badge.id)
+        raise HTTPException(HTTPStatus.BAD_REQUEST, str(exc)) from exc
 
 
 @badges_api_router.get("/api/v1/badges/{badge_id}", response_model=Badge)
@@ -118,7 +129,8 @@ async def api_update_badge(
     except ValueError as exc:
         raise HTTPException(HTTPStatus.BAD_REQUEST, str(exc)) from exc
     badge = await _owned_badge(badge_id, account_id)
-    return await update_badge(Badge(**{**badge.dict(), **data.dict()}))
+    updated = await update_badge(Badge(**{**badge.dict(), **data.dict()}))
+    return await publish_badge_definition(updated, force=True)
 
 
 @badges_api_router.delete("/api/v1/badges/{badge_id}", response_model=SimpleStatus)
@@ -171,6 +183,10 @@ async def api_get_public_badge(claim_token: str) -> PublicBadge:
     badge = await get_badge_by_token(claim_token)
     if not badge:
         raise HTTPException(HTTPStatus.NOT_FOUND, "Badge not found.")
+    try:
+        badge = await publish_badge_definition(badge)
+    except ValueError as exc:
+        raise HTTPException(HTTPStatus.SERVICE_UNAVAILABLE, str(exc)) from exc
     return _public_badge(badge)
 
 

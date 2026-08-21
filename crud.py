@@ -151,7 +151,8 @@ async def get_passport_badges(passport_pubkey: str) -> list[PassportBadge]:
     return await db.fetchall(
         """
         SELECT
-            b.id, b.name, b.description, b.image_url, b.is_active,
+            b.id, b.issuer_pubkey, b.definition_event_id, b.name, b.description,
+            b.is_active,
             b.starts_at, b.ends_at, b.latitude, b.longitude, b.radius_meters,
             c.claimed_at, c.location_verified
         FROM badges.claims c

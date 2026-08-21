@@ -30,9 +30,10 @@ class Badge(CreateBadge):
 
 class PublicBadge(BaseModel):
     id: str
+    issuer_pubkey: str
+    definition_event_id: str
     name: str
     description: str | None
-    image_url: str
     is_active: bool
     starts_at: datetime | None
     ends_at: datetime | None
