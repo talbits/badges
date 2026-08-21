@@ -21,7 +21,10 @@ async def test_badge_crud_and_idempotent_claim(monkeypatch):
     user_id = uuid4().hex
     settings = await configure_issuer(user_id, PrivateKey().bech32())
     assert settings.issuer_pubkey
-    badge = await create_badge(settings.issuer_pubkey, CreateBadge(name="Opening day"))
+    badge = await create_badge(
+        settings.issuer_pubkey,
+        CreateBadge(name="Opening day", image_url="https://example.com/badge.png"),
+    )
 
     assert badge.issuer_pubkey == settings.issuer_pubkey
     assert badge.claim_token
@@ -63,6 +66,7 @@ async def test_badge_claim_window():
         uuid4().hex,
         CreateBadge(
             name="Later",
+            image_url="https://example.com/later.png",
             starts_at=datetime.now(timezone.utc) + timedelta(days=1),
         ),
     )

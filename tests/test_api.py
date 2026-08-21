@@ -45,12 +45,14 @@ async def test_badge_api_crud_ownership_and_validation(monkeypatch):
         assert configured.json()["issuer_pubkey"]
         assert configured.json()["issuer_npub"]
 
-        assert (await client.get("/badges/api/v1/badges")).json() == []
+        missing_image = await client.post("/badges/api/v1/badges", json={"name": "Missing image"})
+        assert missing_image.status_code == 422
 
         invalid_dates = await client.post(
             "/badges/api/v1/badges",
             json={
                 "name": "Invalid dates",
+                "image_url": "https://example.com/invalid.png",
                 "starts_at": "2030-01-02T00:00:00Z",
                 "ends_at": "2030-01-01T00:00:00Z",
             },
@@ -59,13 +61,21 @@ async def test_badge_api_crud_ownership_and_validation(monkeypatch):
 
         partial_location = await client.post(
             "/badges/api/v1/badges",
-            json={"name": "Partial location", "latitude": 38.7},
+            json={
+                "name": "Partial location",
+                "image_url": "https://example.com/partial.png",
+                "latitude": 38.7,
+            },
         )
         assert partial_location.status_code == 400
 
         response = await client.post(
             "/badges/api/v1/badges",
-            json={"name": "API badge", "description": "Smoke test"},
+            json={
+                "name": "API badge",
+                "description": "Smoke test",
+                "image_url": "https://example.com/api.png",
+            },
         )
         assert response.status_code == 201
         badge = response.json()
@@ -83,7 +93,11 @@ async def test_badge_api_crud_ownership_and_validation(monkeypatch):
 
         updated = await client.put(
             f"/badges/api/v1/badges/{badge['id']}",
-            json={"name": "Updated badge", "is_active": False},
+            json={
+                "name": "Updated badge",
+                "image_url": "https://example.com/updated.png",
+                "is_active": False,
+            },
         )
         assert updated.status_code == 200
         assert updated.json()["name"] == "Updated badge"
@@ -101,7 +115,11 @@ async def test_badge_api_crud_ownership_and_validation(monkeypatch):
         async with other_client:
             for method, path, payload in [
                 ("get", f"/badges/api/v1/badges/{badge['id']}", None),
-                ("put", f"/badges/api/v1/badges/{badge['id']}", {"name": "Nope"}),
+                (
+                    "put",
+                    f"/badges/api/v1/badges/{badge['id']}",
+                    {"name": "Nope", "image_url": "https://example.com/nope.png"},
+                ),
                 ("delete", f"/badges/api/v1/badges/{badge['id']}", None),
                 ("get", f"/badges/api/v1/badges/{badge['id']}/claims", None),
                 ("get", f"/badges/api/v1/badges/{badge['id']}/claims.csv", None),
@@ -129,6 +147,7 @@ async def test_public_claim_edge_cases_and_passport_endpoint(monkeypatch):
             "/badges/api/v1/badges",
             json={
                 "name": "Location badge",
+                "image_url": "https://example.com/location.png",
                 "latitude": 38.7223,
                 "longitude": -9.1393,
                 "radius_meters": 100,
@@ -187,7 +206,11 @@ async def test_public_claim_edge_cases_and_passport_endpoint(monkeypatch):
 
         inactive = await client.post(
             "/badges/api/v1/badges",
-            json={"name": "Inactive", "is_active": False},
+            json={
+                "name": "Inactive",
+                "image_url": "https://example.com/inactive.png",
+                "is_active": False,
+            },
         )
         inactive_claim = await client.post(
             f"/badges/api/v1/public/claims/{inactive.json()['claim_token']}",
@@ -199,6 +222,7 @@ async def test_public_claim_edge_cases_and_passport_endpoint(monkeypatch):
             "/badges/api/v1/badges",
             json={
                 "name": "Expired",
+                "image_url": "https://example.com/expired.png",
                 "ends_at": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
             },
         )

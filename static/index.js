@@ -1,3 +1,27 @@
+let leafletPromise
+
+function loadLeaflet() {
+  if (window.L) {
+    return Promise.resolve(window.L)
+  }
+  if (leafletPromise) {
+    return leafletPromise
+  }
+  leafletPromise = new Promise((resolve, reject) => {
+    const css = document.createElement('link')
+    css.rel = 'stylesheet'
+    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+    document.head.appendChild(css)
+
+    const script = document.createElement('script')
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+    script.onload = () => resolve(window.L)
+    script.onerror = reject
+    document.head.appendChild(script)
+  })
+  return leafletPromise
+}
+
 window.PageBadges = {
   template: '#page-badges',
   delimiters: ['${', '}'],
@@ -18,7 +42,12 @@ window.PageBadges = {
         show: false,
         data: {issuer_nsec: ''}
       },
+      imageOptions: [
+        {label: 'URL', value: 'url', icon: 'link'},
+        {label: 'LNbits asset', value: 'asset', icon: 'upload_file'}
+      ],
       badgeColumns: [
+        {name: 'image', label: 'Image', field: 'image_url', align: 'left'},
         {name: 'name', label: 'Name', field: 'name', align: 'left'},
         {name: 'active', label: 'Active', field: 'is_active', align: 'left'},
         {name: 'actions', label: '', field: 'actions', align: 'right'}
@@ -51,7 +80,15 @@ window.PageBadges = {
       ],
       badgeDialog: {
         show: false,
-        data: {}
+        data: {},
+        imageMode: 'url'
+      },
+      mapDialog: {
+        show: false,
+        latitude: null,
+        longitude: null,
+        map: null,
+        marker: null
       },
       qrDialog: {
         show: false,
@@ -112,35 +149,160 @@ window.PageBadges = {
         name: '',
         description: '',
         image_url: '',
+        image_asset_id: null,
         is_active: true,
         starts_at: null,
         ends_at: null,
+        location_enabled: false,
         latitude: null,
         longitude: null,
-        radius_meters: null
+        radius_meters: 100
       }
+      this.badgeDialog.imageMode = 'url'
       this.badgeDialog.show = true
     },
     editBadge(badge) {
-      this.badgeDialog.data = {...badge}
+      this.badgeDialog.data = {
+        ...badge,
+        location_enabled:
+          badge.latitude !== null &&
+          badge.longitude !== null &&
+          badge.radius_meters !== null
+      }
+      this.badgeDialog.imageMode = badge.image_url.includes('/api/v1/assets/')
+        ? 'asset'
+        : 'url'
       this.badgeDialog.show = true
     },
     payload(data) {
       return {
         name: data.name,
         description: data.description || null,
-        image_url: data.image_url || null,
+        image_url: data.image_url,
         is_active: data.is_active,
         starts_at: data.starts_at || null,
         ends_at: data.ends_at || null,
-        latitude: data.latitude === '' ? null : data.latitude,
-        longitude: data.longitude === '' ? null : data.longitude,
-        radius_meters: data.radius_meters === '' ? null : data.radius_meters
+        latitude: data.location_enabled ? data.latitude : null,
+        longitude: data.location_enabled ? data.longitude : null,
+        radius_meters: data.location_enabled ? data.radius_meters : null
       }
+    },
+    async uploadBadgeAsset(event) {
+      const file = event.target.files[0]
+      event.target.value = null
+      if (!file) {
+        return
+      }
+      const formData = new FormData()
+      formData.append('file', file)
+      try {
+        const {data} = await LNbits.api.request(
+          'POST',
+          '/api/v1/assets?public_asset=true',
+          null,
+          formData,
+          {headers: {'Content-Type': 'multipart/form-data'}}
+        )
+        this.badgeDialog.data.image_url = `${window.location.origin}/api/v1/assets/${data.id}/data`
+        this.badgeDialog.data.image_asset_id = data.id
+        this.$q.notify({type: 'positive', message: 'Badge image uploaded.'})
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+      }
+    },
+    async openLocationPicker() {
+      this.mapDialog.latitude = this.badgeDialog.data.latitude
+      this.mapDialog.longitude = this.badgeDialog.data.longitude
+      this.mapDialog.show = true
+      await this.$nextTick()
+      try {
+        await loadLeaflet()
+        this.initMap()
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: 'The map could not be loaded. Enter coordinates manually.'
+        })
+      }
+    },
+    initMap() {
+      const element = document.getElementById('badge-location-map')
+      if (!element || !window.L) {
+        return
+      }
+      if (this.mapDialog.map) {
+        this.mapDialog.map.remove()
+      }
+      const latitude = Number(this.mapDialog.latitude) || 0
+      const longitude = Number(this.mapDialog.longitude) || 0
+      const map = window.L.map(element).setView(
+        [latitude, longitude],
+        latitude || longitude ? 14 : 2
+      )
+      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map)
+      map.on('click', event => {
+        this.mapDialog.latitude = Number(event.latlng.lat.toFixed(6))
+        this.mapDialog.longitude = Number(event.latlng.lng.toFixed(6))
+        this.setMapMarker()
+      })
+      this.mapDialog.map = map
+      if (
+        this.mapDialog.latitude !== null &&
+        this.mapDialog.longitude !== null
+      ) {
+        this.setMapMarker()
+      }
+      window.setTimeout(() => map.invalidateSize(), 0)
+    },
+    setMapMarker() {
+      const {map, marker, latitude, longitude} = this.mapDialog
+      if (!map || latitude === null || longitude === null) {
+        return
+      }
+      if (marker) {
+        marker.setLatLng([latitude, longitude])
+      } else {
+        this.mapDialog.marker = window.L.marker([latitude, longitude]).addTo(
+          map
+        )
+      }
+    },
+    applyMapLocation() {
+      this.badgeDialog.data.latitude = this.mapDialog.latitude
+      this.badgeDialog.data.longitude = this.mapDialog.longitude
+      this.mapDialog.show = false
+    },
+    closeMapDialog() {
+      if (this.mapDialog.map) {
+        this.mapDialog.map.remove()
+      }
+      this.mapDialog.map = null
+      this.mapDialog.marker = null
     },
     async saveBadge() {
       try {
         const data = this.badgeDialog.data
+        if (!data.image_url) {
+          this.$q.notify({type: 'warning', message: 'Badge image is required.'})
+          return
+        }
+        if (
+          data.location_enabled &&
+          (data.latitude === null ||
+            data.latitude === '' ||
+            data.longitude === null ||
+            data.longitude === '' ||
+            data.radius_meters === null ||
+            data.radius_meters === '')
+        ) {
+          this.$q.notify({
+            type: 'warning',
+            message: 'Choose a map point and set a location radius.'
+          })
+          return
+        }
         const method = data.id ? 'PUT' : 'POST'
         const url = data.id
           ? `/badges/api/v1/badges/${data.id}`

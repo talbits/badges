@@ -10,7 +10,7 @@ def utc_now() -> datetime:
 class CreateBadge(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
-    image_url: str | None = Field(default=None, max_length=2000)
+    image_url: str = Field(min_length=1, max_length=2000)
     is_active: bool = True
     starts_at: datetime | None = None
     ends_at: datetime | None = None
@@ -32,7 +32,7 @@ class PublicBadge(BaseModel):
     id: str
     name: str
     description: str | None
-    image_url: str | None
+    image_url: str
     is_active: bool
     starts_at: datetime | None
     ends_at: datetime | None

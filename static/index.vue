@@ -58,6 +58,16 @@
             :filter="badgesTable.search"
             :loading="loading"
           >
+            <template v-slot:body-cell-image="props">
+              <q-td :props="props">
+                <q-avatar square size="48px">
+                  <q-img
+                    :src="props.row.image_url"
+                    :alt="props.row.name"
+                  ></q-img>
+                </q-avatar>
+              </q-td>
+            </template>
             <template v-slot:body-cell-active="props">
               <q-td :props="props">
                 <q-badge :color="props.row.is_active ? 'positive' : 'grey'">
@@ -170,60 +180,129 @@
             required
             autofocus
           ></q-input>
+          <div class="text-subtitle2">Badge image *</div>
+          <q-btn-toggle
+            v-model="badgeDialog.imageMode"
+            spread
+            no-caps
+            unelevated
+            toggle-color="primary"
+            :options="imageOptions"
+          ></q-btn-toggle>
+          <q-input
+            v-if="badgeDialog.imageMode === 'url'"
+            v-model.trim="badgeDialog.data.image_url"
+            filled
+            dense
+            type="url"
+            label="Image URL"
+            hint="Required. Use a public URL or upload an LNbits asset."
+            :rules="[value => !!value || 'Image is required']"
+          ></q-input>
+          <div v-else class="row items-center q-gutter-sm">
+            <input
+              ref="badgeImageInput"
+              type="file"
+              accept="image/*"
+              style="display: none"
+              @change="uploadBadgeAsset"
+            />
+            <q-btn
+              color="primary"
+              outline
+              icon="upload"
+              label="Upload image"
+              @click="$refs.badgeImageInput.click()"
+            ></q-btn>
+            <q-img
+              v-if="badgeDialog.data.image_url"
+              :src="badgeDialog.data.image_url"
+              style="width: 64px; height: 64px"
+              fit="cover"
+            ></q-img>
+            <div
+              v-if="badgeDialog.data.image_url"
+              class="text-caption ellipsis"
+              style="max-width: 300px"
+              v-text="badgeDialog.data.image_url"
+            ></div>
+          </div>
           <q-input
             v-model.trim="badgeDialog.data.description"
             label="Description"
             type="textarea"
           ></q-input>
-          <q-input
-            v-model.trim="badgeDialog.data.image_url"
-            label="Image URL"
-            hint="Optional"
-          ></q-input>
           <q-toggle
             v-model="badgeDialog.data.is_active"
             label="Active"
           ></q-toggle>
-          <div class="row q-col-gutter-sm">
-            <div class="col-12 col-sm-6">
+          <q-expansion-item
+            group="advanced"
+            icon="settings"
+            label="Advanced options"
+          >
+            <div class="q-gutter-md q-pt-md">
+              <div class="text-subtitle2">Availability</div>
               <q-input
                 v-model="badgeDialog.data.starts_at"
+                filled
+                dense
                 type="datetime-local"
                 label="Starts at"
               ></q-input>
-            </div>
-            <div class="col-12 col-sm-6">
               <q-input
                 v-model="badgeDialog.data.ends_at"
+                filled
+                dense
                 type="datetime-local"
                 label="Ends at"
               ></q-input>
+              <q-separator></q-separator>
+              <q-toggle
+                v-model="badgeDialog.data.location_enabled"
+                label="Location-aware claiming"
+              ></q-toggle>
+              <div v-if="badgeDialog.data.location_enabled" class="q-gutter-md">
+                <div class="text-caption">
+                  Pick the claim location on a map, then set the allowed radius.
+                </div>
+                <q-btn
+                  color="primary"
+                  outline
+                  icon="map"
+                  label="Pick point on map"
+                  @click="openLocationPicker"
+                ></q-btn>
+                <div class="row q-col-gutter-sm">
+                  <q-input
+                    class="col-12 col-sm-4"
+                    v-model.number="badgeDialog.data.latitude"
+                    filled
+                    dense
+                    type="number"
+                    label="Latitude"
+                  ></q-input>
+                  <q-input
+                    class="col-12 col-sm-4"
+                    v-model.number="badgeDialog.data.longitude"
+                    filled
+                    dense
+                    type="number"
+                    label="Longitude"
+                  ></q-input>
+                  <q-input
+                    class="col-12 col-sm-4"
+                    v-model.number="badgeDialog.data.radius_meters"
+                    filled
+                    dense
+                    type="number"
+                    label="Radius (m)"
+                    min="1"
+                  ></q-input>
+                </div>
+              </div>
             </div>
-          </div>
-          <div class="text-subtitle2">Optional location check</div>
-          <div class="row q-col-gutter-sm">
-            <div class="col-12 col-sm-4">
-              <q-input
-                v-model.number="badgeDialog.data.latitude"
-                type="number"
-                label="Latitude"
-              ></q-input>
-            </div>
-            <div class="col-12 col-sm-4">
-              <q-input
-                v-model.number="badgeDialog.data.longitude"
-                type="number"
-                label="Longitude"
-              ></q-input>
-            </div>
-            <div class="col-12 col-sm-4">
-              <q-input
-                v-model.number="badgeDialog.data.radius_meters"
-                type="number"
-                label="Radius (m)"
-              ></q-input>
-            </div>
-          </div>
+          </q-expansion-item>
           <div class="row q-mt-lg">
             <q-btn
               type="submit"
@@ -240,6 +319,48 @@
             ></q-btn>
           </div>
         </q-form>
+      </q-card>
+    </q-dialog>
+
+    <q-dialog v-model="mapDialog.show" position="top" @hide="closeMapDialog">
+      <q-card
+        class="q-pa-lg q-pt-xl lnbits__dialog-card"
+        style="width: 900px; max-width: 95vw"
+      >
+        <div class="text-h6 q-mb-md">Pick badge location</div>
+        <div id="badge-location-map" style="height: 420px"></div>
+        <div class="row q-col-gutter-sm q-mt-md">
+          <q-input
+            class="col-12 col-sm-6"
+            v-model.number="mapDialog.latitude"
+            filled
+            dense
+            type="number"
+            label="Latitude"
+          ></q-input>
+          <q-input
+            class="col-12 col-sm-6"
+            v-model.number="mapDialog.longitude"
+            filled
+            dense
+            type="number"
+            label="Longitude"
+          ></q-input>
+        </div>
+        <div class="row q-mt-lg">
+          <q-btn
+            color="primary"
+            unelevated
+            label="Use this point"
+            :disable="
+              mapDialog.latitude === null || mapDialog.longitude === null
+            "
+            @click="applyMapLocation"
+          ></q-btn>
+          <q-btn v-close-popup flat color="grey" class="q-ml-auto">
+            Cancel
+          </q-btn>
+        </div>
       </q-card>
     </q-dialog>
 
