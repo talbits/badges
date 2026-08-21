@@ -69,6 +69,9 @@ async def test_badge_api_crud_ownership_and_validation(monkeypatch):
         )
         assert response.status_code == 201
         badge = response.json()
+        assert "claim_token" in badge
+        assert "user_id" not in badge
+        assert len(badge["issuer_pubkey"]) == 64
 
         listed = await client.get("/badges/api/v1/badges")
         assert listed.status_code == 200

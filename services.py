@@ -9,6 +9,7 @@ from .crud import (
     get_badge_by_token,
     get_claim,
     get_extension_settings,
+    get_extension_settings_by_pubkey,
     update_badge,
     update_claim,
     update_extension_settings,
@@ -69,6 +70,11 @@ async def get_issuer_settings(owner_id: str) -> IssuerSettingsResponse:
     return _settings_response(await get_extension_settings(owner_id))
 
 
+async def get_issuer_pubkey(owner_id: str) -> str | None:
+    settings = await get_extension_settings(owner_id)
+    return settings.issuer_pubkey if settings else None
+
+
 async def configure_issuer(owner_id: str, raw_nsec: str) -> IssuerSettingsResponse:
     new_key = _private_key(raw_nsec)
     settings = await get_extension_settings(owner_id)
@@ -82,10 +88,11 @@ async def configure_issuer(owner_id: str, raw_nsec: str) -> IssuerSettingsRespon
     if not encrypted:
         raise ValueError("Issuer nsec could not be stored")
     if settings:
+        settings.issuer_pubkey = new_key.public_key.hex()
         settings.issuer_nsec_encrypted = encrypted
         await update_extension_settings(settings)
     else:
-        settings = await create_extension_settings(owner_id, encrypted)
+        settings = await create_extension_settings(owner_id, new_key.public_key.hex(), encrypted)
     return _settings_response(settings)
 
 
@@ -146,7 +153,7 @@ def _publish_event(event) -> str:
 async def publish_badge_definition(badge: Badge) -> Badge:
     if badge.definition_event_id:
         return badge
-    settings = await get_extension_settings(badge.user_id)
+    settings = await get_extension_settings_by_pubkey(badge.issuer_pubkey)
     key = _settings_key(settings) if settings else None
     if not key:
         raise ValueError("Issuer nsec is not configured")
@@ -173,7 +180,7 @@ async def publish_badge_definition(badge: Badge) -> Badge:
 
 
 async def publish_badge_award(badge: Badge, claim: Claim) -> Claim:
-    settings = await get_extension_settings(badge.user_id)
+    settings = await get_extension_settings_by_pubkey(badge.issuer_pubkey)
     key = _settings_key(settings) if settings else None
     if not key:
         raise ValueError("Issuer nsec is not configured")

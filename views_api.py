@@ -33,6 +33,7 @@ from .models import (
 from .services import (
     claim_badge,
     configure_issuer,
+    get_issuer_pubkey,
     get_issuer_settings,
     validate_badge_data,
 )
@@ -45,7 +46,10 @@ def _public_badge(badge: Badge) -> PublicBadge:
 
 
 async def _owned_badge(badge_id: str, account_id: AccountId) -> Badge:
-    badge = await get_badge(account_id.id, badge_id)
+    issuer_pubkey = await get_issuer_pubkey(account_id.id)
+    if not issuer_pubkey:
+        raise HTTPException(HTTPStatus.NOT_FOUND, "Issuer not configured.")
+    badge = await get_badge(issuer_pubkey, badge_id)
     if not badge:
         raise HTTPException(HTTPStatus.NOT_FOUND, "Badge not found.")
     return badge
@@ -76,7 +80,8 @@ async def api_update_settings(
 async def api_get_badges(
     account_id: AccountId = Depends(check_account_id_exists),
 ) -> list[Badge]:
-    return await get_badges(account_id.id)
+    issuer_pubkey = await get_issuer_pubkey(account_id.id)
+    return await get_badges(issuer_pubkey) if issuer_pubkey else []
 
 
 @badges_api_router.post("/api/v1/badges", response_model=Badge, status_code=HTTPStatus.CREATED)
@@ -84,11 +89,14 @@ async def api_create_badge(
     data: CreateBadge,
     account_id: AccountId = Depends(check_account_id_exists),
 ) -> Badge:
+    issuer_pubkey = await get_issuer_pubkey(account_id.id)
+    if not issuer_pubkey:
+        raise HTTPException(HTTPStatus.BAD_REQUEST, "Issuer not configured.")
     try:
         validate_badge_data(data)
     except ValueError as exc:
         raise HTTPException(HTTPStatus.BAD_REQUEST, str(exc)) from exc
-    return await create_badge(account_id.id, data)
+    return await create_badge(issuer_pubkey, data)
 
 
 @badges_api_router.get("/api/v1/badges/{badge_id}", response_model=Badge)
@@ -118,8 +126,8 @@ async def api_delete_badge(
     badge_id: str,
     account_id: AccountId = Depends(check_account_id_exists),
 ) -> SimpleStatus:
-    await _owned_badge(badge_id, account_id)
-    await delete_badge(account_id.id, badge_id)
+    badge = await _owned_badge(badge_id, account_id)
+    await delete_badge(badge.issuer_pubkey, badge_id)
     return SimpleStatus(success=True, message="Badge deleted")
 
 

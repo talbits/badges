@@ -19,12 +19,13 @@ async def test_badge_crud_and_idempotent_claim(monkeypatch):
 
     monkeypatch.setattr("badges.services._publish_event", fake_publish)
     user_id = uuid4().hex
-    await configure_issuer(user_id, PrivateKey().bech32())
-    badge = await create_badge(user_id, CreateBadge(name="Opening day"))
+    settings = await configure_issuer(user_id, PrivateKey().bech32())
+    assert settings.issuer_pubkey
+    badge = await create_badge(settings.issuer_pubkey, CreateBadge(name="Opening day"))
 
-    assert badge.user_id == user_id
+    assert badge.issuer_pubkey == settings.issuer_pubkey
     assert badge.claim_token
-    assert len(await get_badges(user_id)) == 1
+    assert len(await get_badges(settings.issuer_pubkey)) == 1
 
     claim_request = ClaimRequest(passport_pubkey="a" * 64)
     claim, created = await claim_badge(badge.claim_token, claim_request)
@@ -48,12 +49,12 @@ async def test_badge_crud_and_idempotent_claim(monkeypatch):
 
     badge.name = "Opening day updated"
     await update_badge(badge)
-    updated = await get_badge(user_id, badge.id)
+    updated = await get_badge(settings.issuer_pubkey, badge.id)
     assert updated is not None
     assert updated.name == "Opening day updated"
 
-    await delete_badge(user_id, badge.id)
-    assert await get_badge(user_id, badge.id) is None
+    await delete_badge(settings.issuer_pubkey, badge.id)
+    assert await get_badge(settings.issuer_pubkey, badge.id) is None
 
 
 @pytest.mark.asyncio

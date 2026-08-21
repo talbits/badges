@@ -21,7 +21,7 @@ class CreateBadge(BaseModel):
 
 class Badge(CreateBadge):
     id: str
-    user_id: str
+    issuer_pubkey: str
     claim_token: str
     definition_event_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
@@ -72,6 +72,7 @@ class PassportBadge(PublicBadge):
 
 class StoredSettings(BaseModel):
     owner_id: str
+    issuer_pubkey: str | None = None
     issuer_nsec_encrypted: str | None = None
     updated_at: datetime = Field(default_factory=utc_now)
 

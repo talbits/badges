@@ -12,8 +12,12 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-async def create_extension_settings(owner_id: str, encrypted_nsec: str) -> StoredSettings:
-    settings = StoredSettings(owner_id=owner_id, issuer_nsec_encrypted=encrypted_nsec)
+async def create_extension_settings(owner_id: str, issuer_pubkey: str, encrypted_nsec: str) -> StoredSettings:
+    settings = StoredSettings(
+        owner_id=owner_id,
+        issuer_pubkey=issuer_pubkey,
+        issuer_nsec_encrypted=encrypted_nsec,
+    )
     await db.insert("badges.extension_settings", settings)
     return settings
 
@@ -32,10 +36,18 @@ async def update_extension_settings(settings: StoredSettings) -> StoredSettings:
     return settings
 
 
-async def create_badge(user_id: str, data: CreateBadge) -> Badge:
+async def get_extension_settings_by_pubkey(issuer_pubkey: str) -> StoredSettings | None:
+    return await db.fetchone(
+        "SELECT * FROM badges.extension_settings WHERE issuer_pubkey = :issuer_pubkey",
+        {"issuer_pubkey": issuer_pubkey},
+        StoredSettings,
+    )
+
+
+async def create_badge(issuer_pubkey: str, data: CreateBadge) -> Badge:
     badge = Badge(
         id=urlsafe_short_hash(),
-        user_id=user_id,
+        issuer_pubkey=issuer_pubkey,
         claim_token=urlsafe_short_hash(),
         **data.dict(),
     )
@@ -43,18 +55,18 @@ async def create_badge(user_id: str, data: CreateBadge) -> Badge:
     return badge
 
 
-async def get_badges(user_id: str) -> list[Badge]:
+async def get_badges(issuer_pubkey: str) -> list[Badge]:
     return await db.fetchall(
-        "SELECT * FROM badges.badges WHERE user_id = :user_id ORDER BY created_at DESC",
-        {"user_id": user_id},
+        "SELECT * FROM badges.badges WHERE issuer_pubkey = :issuer_pubkey ORDER BY created_at DESC",
+        {"issuer_pubkey": issuer_pubkey},
         model=Badge,
     )
 
 
-async def get_badge(user_id: str, badge_id: str) -> Badge | None:
+async def get_badge(issuer_pubkey: str, badge_id: str) -> Badge | None:
     return await db.fetchone(
-        "SELECT * FROM badges.badges WHERE id = :id AND user_id = :user_id",
-        {"id": badge_id, "user_id": user_id},
+        "SELECT * FROM badges.badges WHERE id = :id AND issuer_pubkey = :issuer_pubkey",
+        {"id": badge_id, "issuer_pubkey": issuer_pubkey},
         Badge,
     )
 
@@ -73,14 +85,14 @@ async def update_badge(badge: Badge) -> Badge:
     return badge
 
 
-async def delete_badge(user_id: str, badge_id: str) -> None:
+async def delete_badge(issuer_pubkey: str, badge_id: str) -> None:
     await db.execute(
         "DELETE FROM badges.claims WHERE badge_id = :badge_id",
         {"badge_id": badge_id},
     )
     await db.execute(
-        "DELETE FROM badges.badges WHERE id = :id AND user_id = :user_id",
-        {"id": badge_id, "user_id": user_id},
+        "DELETE FROM badges.badges WHERE id = :id AND issuer_pubkey = :issuer_pubkey",
+        {"id": badge_id, "issuer_pubkey": issuer_pubkey},
     )
 
 

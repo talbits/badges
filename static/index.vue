@@ -35,11 +35,27 @@
           </q-banner>
         </q-card-section>
         <q-card-section>
+          <q-input
+            v-model="badgesTable.search"
+            dense
+            filled
+            clearable
+            label="Search badges"
+          >
+            <template v-slot:prepend>
+              <q-icon name="search"></q-icon>
+            </template>
+          </q-input>
+        </q-card-section>
+        <q-card-section>
           <q-table
+            dense
             flat
             :rows="badges"
             :columns="badgeColumns"
             row-key="id"
+            v-model:pagination="badgesTable.pagination"
+            :filter="badgesTable.search"
             :loading="loading"
           >
             <template v-slot:body-cell-active="props">

@@ -4,6 +4,10 @@ window.PageBadges = {
   data() {
     return {
       badges: [],
+      badgesTable: {
+        search: '',
+        pagination: {rowsPerPage: 10}
+      },
       loading: false,
       settings: {
         configured: false,
