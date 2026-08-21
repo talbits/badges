@@ -1,82 +1,69 @@
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
+from nostrclient.nostr.key import PrivateKey  # type: ignore[import]
 
-from badges.crud import (  # type: ignore[import]
-    create_owner_data,
-    delete_owner_data,
-    get_owner_data,
-    get_owner_data_by_id,
-    get_owner_data_ids_by_user,
-    get_owner_data_paginated,
-    update_owner_data,
-)
-from badges.models import (  # type: ignore[import]
-    CreateOwnerData,
-    OwnerData,
-)
+from badges.crud import create_badge, delete_badge, get_badge, get_badges, update_badge  # type: ignore[import]
+from badges.models import ClaimRequest, CreateBadge  # type: ignore[import]
+from badges.services import claim_badge, configure_issuer  # type: ignore[import]
 
 
 @pytest.mark.asyncio
-async def test_create_and_get_owner_data():
+async def test_badge_crud_and_idempotent_claim(monkeypatch):
+    published = []
+
+    def fake_publish(event):
+        published.append(event)
+        return event.id
+
+    monkeypatch.setattr("badges.services._publish_event", fake_publish)
     user_id = uuid4().hex
+    await configure_issuer(user_id, PrivateKey().bech32())
+    badge = await create_badge(user_id, CreateBadge(name="Opening day"))
 
-    data = CreateOwnerData(
-        name = "name_ACuyqv8XwLys5Sg8kCYm7R",
-    )
-    owner_data_one = await create_owner_data(user_id, data)
-    assert owner_data_one.id is not None
-    assert owner_data_one.user_id == user_id
+    assert badge.user_id == user_id
+    assert badge.claim_token
+    assert len(await get_badges(user_id)) == 1
 
-    owner_data_one = await get_owner_data(user_id, owner_data_one.id)
-    assert owner_data_one.id is not None
-    assert owner_data_one.user_id == user_id
-    assert owner_data_one.name == data.name
+    claim_request = ClaimRequest(passport_pubkey="a" * 64)
+    claim, created = await claim_badge(badge.claim_token, claim_request)
+    assert created is True
+    assert claim.badge_id == badge.id
+    assert claim.award_event_id
+    assert len(published) == 2
+    definition, award = published
+    assert definition.id == definition.to_dict()["id"]
+    assert definition.kind == 30009
+    assert definition.content == badge.name
+    assert ["d", badge.id] in definition.tags
+    assert award.id == award.to_dict()["id"]
+    assert award.kind == 8
+    assert ["a", f"30009:{definition.public_key}:{badge.id}"] in award.tags
+    assert ["p", claim.passport_pubkey] in award.tags
 
-    data = CreateOwnerData(
-        name = "name_ACuyqv8XwLys5Sg8kCYm7R",
-    )
-    owner_data_two = await create_owner_data(user_id, data)
-    assert owner_data_two.id is not None
-    assert owner_data_two.user_id == user_id
+    duplicate, created = await claim_badge(badge.claim_token, claim_request)
+    assert created is False
+    assert duplicate.id == claim.id
 
-    owner_data_list = await get_owner_data_ids_by_user(user_id=user_id)
-    assert len(owner_data_list) == 2
+    badge.name = "Opening day updated"
+    await update_badge(badge)
+    updated = await get_badge(user_id, badge.id)
+    assert updated is not None
+    assert updated.name == "Opening day updated"
 
-    owner_data_page = await get_owner_data_paginated(user_id=user_id)
-    assert owner_data_page.total == 2
-    assert len(owner_data_page.data) == 2
-
-    await delete_owner_data(user_id, owner_data_one.id)
-    owner_data_list = await get_owner_data_ids_by_user(user_id=user_id)
-    assert len(owner_data_list) == 1
-
-    owner_data_page = await get_owner_data_paginated(user_id=user_id)
-    assert owner_data_page.total == 1
-    assert len(owner_data_page.data) == 1
+    await delete_badge(user_id, badge.id)
+    assert await get_badge(user_id, badge.id) is None
 
 
 @pytest.mark.asyncio
-async def test_update_owner_data():
-    user_id = uuid4().hex
-
-    data = CreateOwnerData(
-        name = "name_ACuyqv8XwLys5Sg8kCYm7R",
+async def test_badge_claim_window():
+    badge = await create_badge(
+        uuid4().hex,
+        CreateBadge(
+            name="Later",
+            starts_at=datetime.now(timezone.utc) + timedelta(days=1),
+        ),
     )
-    owner_data_one = await create_owner_data(user_id, data)
-    assert owner_data_one.id is not None
-    assert owner_data_one.user_id == user_id
-
-    owner_data_one = await get_owner_data(user_id, owner_data_one.id)
-    assert owner_data_one.id is not None
-    assert owner_data_one.user_id == user_id
-    assert owner_data_one.name == data.name
-
-    data_updated = CreateOwnerData(
-        name = "name_ACuyqv8XwLys5Sg8kCYm7R",
-    )
-    owner_data_updated = OwnerData(**{**owner_data_one.dict(), **data_updated.dict()})
-
-    await update_owner_data(owner_data_updated)
-    owner_data_one = await get_owner_data_by_id(owner_data_one.id)
-    assert owner_data_one.name == owner_data_updated.name
+    with pytest.raises(ValueError, match="not available yet"):
+        await claim_badge(badge.claim_token, ClaimRequest(passport_pubkey="b" * 64))
