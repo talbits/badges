@@ -4,5 +4,11 @@
     "name": "PageBadges",
     "template": "/badges/static/index.vue",
     "component": "/badges/static/index.js"
+  },
+  {
+    "path": "/badges/claim",
+    "name": "PageBadgesClaim",
+    "template": "/badges/static/public.vue",
+    "component": "/badges/static/public.js"
   }
 ]

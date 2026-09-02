@@ -37,6 +37,7 @@ class ClaimRequest(BaseModel):
     )
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
+    accuracy: float | None = Field(default=None, ge=0)
 
 
 class Claim(BaseModel):

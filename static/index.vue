@@ -3,53 +3,49 @@
     <div class="col-12">
       <q-card>
         <q-card-section class="row items-center">
-          <div class="text-h5">Badges</div>
+          <q-btn
+            unelevated
+            color="primary"
+            label="New badge"
+            class="q-mr-md"
+            @click="newBadge"
+          ></q-btn>
           <q-space></q-space>
           <q-btn
             flat
-            icon="key"
-            label="Issuer key"
-            @click="showSettings"
-          ></q-btn>
-          <q-btn
+            round
+            dense
             color="primary"
-            unelevated
-            icon="add"
-            label="New badge"
-            @click="newBadge"
-          ></q-btn>
-        </q-card-section>
-        <q-separator></q-separator>
-        <q-card-section v-if="!settings.configured">
-          <q-banner rounded class="bg-orange-1 text-orange-10">
-            Configure one issuer nsec before the first public claim. Key
-            rotation is not supported.
-            <template v-slot:action>
-              <q-btn flat label="Configure" @click="showSettings"></q-btn>
-            </template>
-          </q-banner>
-        </q-card-section>
-        <q-card-section v-else>
-          <q-banner rounded class="bg-green-1 text-green-10">
-            Issuer: <span v-text="settings.issuer_npub"></span>
-          </q-banner>
-        </q-card-section>
-        <q-card-section>
-          <q-input
-            v-model="badgesTable.search"
-            dense
-            filled
-            clearable
-            label="Search badges"
+            icon="settings"
+            aria-label="Issuer key settings"
+            @click="showSettings"
           >
-            <template v-slot:prepend>
-              <q-icon name="search"></q-icon>
-            </template>
-          </q-input>
+            <q-tooltip>Issuer key settings</q-tooltip>
+          </q-btn>
         </q-card-section>
+      </q-card>
+
+      <q-card>
         <q-card-section>
+          <div class="row items-center no-wrap q-mb-md">
+            <div class="col">
+              <h5 class="text-subtitle1 q-my-none">Badges</h5>
+            </div>
+            <div class="col q-ml-lg">
+              <q-input
+                borderless
+                dense
+                debounce="300"
+                v-model="badgesTable.search"
+                placeholder="Search badges"
+              >
+                <template v-slot:append>
+                  <q-icon name="search"></q-icon>
+                </template>
+              </q-input>
+            </div>
+          </div>
           <q-table
-            dense
             flat
             :rows="badges"
             :columns="badgeColumns"
@@ -180,6 +176,12 @@
             required
             autofocus
           ></q-input>
+          <q-input
+            v-model.trim="badgeDialog.data.description"
+            label="Description"
+            type="text"
+            autogrow
+          ></q-input>
           <div class="text-subtitle2">Badge image *</div>
           <q-btn-toggle
             v-model="badgeDialog.imageMode"
@@ -210,8 +212,15 @@
             <q-btn
               color="primary"
               outline
+              icon="folder_open"
+              label="Choose existing"
+              @click="showAssetPicker"
+            ></q-btn>
+            <q-btn
+              color="primary"
+              outline
               icon="upload"
-              label="Upload image"
+              label="Upload new"
               @click="$refs.badgeImageInput.click()"
             ></q-btn>
             <q-img
@@ -227,15 +236,53 @@
               v-text="badgeDialog.data.image_url"
             ></div>
           </div>
-          <q-input
-            v-model.trim="badgeDialog.data.description"
-            label="Description"
-            type="textarea"
-          ></q-input>
           <q-toggle
             v-model="badgeDialog.data.is_active"
             label="Active"
           ></q-toggle>
+          <q-toggle
+            v-model="badgeDialog.data.location_enabled"
+            label="Location-aware claiming"
+          ></q-toggle>
+          <div v-if="badgeDialog.data.location_enabled" class="q-gutter-md">
+            <div class="text-caption">
+              Pick the claim location on a map, then set the allowed radius.
+            </div>
+            <q-btn
+              color="primary"
+              outline
+              icon="map"
+              label="Pick point on map"
+              @click="openLocationPicker"
+            ></q-btn>
+            <div class="row q-col-gutter-sm">
+              <q-input
+                class="col-12 col-sm-4"
+                v-model.number="badgeDialog.data.latitude"
+                filled
+                dense
+                type="number"
+                label="Latitude"
+              ></q-input>
+              <q-input
+                class="col-12 col-sm-4"
+                v-model.number="badgeDialog.data.longitude"
+                filled
+                dense
+                type="number"
+                label="Longitude"
+              ></q-input>
+              <q-input
+                class="col-12 col-sm-4"
+                v-model.number="badgeDialog.data.radius_meters"
+                filled
+                dense
+                type="number"
+                label="Radius (m)"
+                min="1"
+              ></q-input>
+            </div>
+          </div>
           <q-expansion-item
             group="advanced"
             icon="settings"
@@ -257,50 +304,6 @@
                 type="datetime-local"
                 label="Ends at"
               ></q-input>
-              <q-separator></q-separator>
-              <q-toggle
-                v-model="badgeDialog.data.location_enabled"
-                label="Location-aware claiming"
-              ></q-toggle>
-              <div v-if="badgeDialog.data.location_enabled" class="q-gutter-md">
-                <div class="text-caption">
-                  Pick the claim location on a map, then set the allowed radius.
-                </div>
-                <q-btn
-                  color="primary"
-                  outline
-                  icon="map"
-                  label="Pick point on map"
-                  @click="openLocationPicker"
-                ></q-btn>
-                <div class="row q-col-gutter-sm">
-                  <q-input
-                    class="col-12 col-sm-4"
-                    v-model.number="badgeDialog.data.latitude"
-                    filled
-                    dense
-                    type="number"
-                    label="Latitude"
-                  ></q-input>
-                  <q-input
-                    class="col-12 col-sm-4"
-                    v-model.number="badgeDialog.data.longitude"
-                    filled
-                    dense
-                    type="number"
-                    label="Longitude"
-                  ></q-input>
-                  <q-input
-                    class="col-12 col-sm-4"
-                    v-model.number="badgeDialog.data.radius_meters"
-                    filled
-                    dense
-                    type="number"
-                    label="Radius (m)"
-                    min="1"
-                  ></q-input>
-                </div>
-              </div>
             </div>
           </q-expansion-item>
           <div class="row q-mt-lg">
@@ -319,6 +322,86 @@
             ></q-btn>
           </div>
         </q-form>
+      </q-card>
+    </q-dialog>
+
+    <q-dialog v-model="assetsDialog.show" position="top">
+      <q-card
+        class="q-pa-lg q-pt-xl lnbits__dialog-card"
+        style="width: 760px; max-width: 95vw"
+      >
+        <div class="row items-center q-mb-md">
+          <div class="text-h6">Choose an image asset</div>
+          <q-space></q-space>
+          <q-btn flat round icon="close" v-close-popup></q-btn>
+        </div>
+        <q-input
+          v-model="assetsTable.search"
+          dense
+          outlined
+          debounce="300"
+          clearable
+          label="Search assets"
+        >
+          <template v-slot:prepend>
+            <q-icon name="search"></q-icon>
+          </template>
+        </q-input>
+        <q-table
+          class="q-mt-md"
+          grid
+          flat
+          bordered
+          hide-header
+          row-key="id"
+          :rows="assets"
+          :columns="assetsTable.columns"
+          :loading="assetsTable.loading"
+          v-model:pagination="assetsTable.pagination"
+          @request="getBadgeAssets"
+        >
+          <template v-slot:item="props">
+            <div class="q-pa-xs col-12 col-sm-6 col-md-4">
+              <q-card flat bordered class="q-ma-sm">
+                <q-img
+                  v-if="props.row.thumbnail_base64"
+                  :src="`/api/v1/assets/${props.row.id}/thumbnail`"
+                  :alt="props.row.name"
+                  ratio="1"
+                ></q-img>
+                <q-card-section>
+                  <div
+                    class="text-subtitle2 ellipsis"
+                    v-text="props.row.name"
+                  ></div>
+                  <q-chip
+                    v-if="!props.row.is_public"
+                    dense
+                    color="warning"
+                    text-color="dark"
+                    icon="lock"
+                  >
+                    Private
+                  </q-chip>
+                </q-card-section>
+                <q-card-actions align="right">
+                  <q-btn
+                    flat
+                    color="primary"
+                    label="Use image"
+                    :disable="!props.row.mime_type?.startsWith('image/')"
+                    @click="selectBadgeAsset(props.row)"
+                  ></q-btn>
+                </q-card-actions>
+              </q-card>
+            </div>
+          </template>
+          <template v-slot:no-data>
+            <div class="full-width row flex-center q-pa-lg text-grey">
+              No image assets found.
+            </div>
+          </template>
+        </q-table>
       </q-card>
     </q-dialog>
 
@@ -382,7 +465,21 @@
             color="primary"
             unelevated
             label="Copy address"
-            @click="copyBadgeAddress(qrDialog.badge)"
+            @click="
+              utils.copyText(
+                badgeAddress(qrDialog.badge),
+                'Nostr address copied'
+              )
+            "
+          ></q-btn>
+          <q-btn
+            outline
+            color="primary"
+            icon="open_in_new"
+            label="Open companion"
+            :href="`/badges/claim?naddr=${encodeURIComponent(badgeAddress(qrDialog.badge))}`"
+            target="_blank"
+            rel="noopener noreferrer"
           ></q-btn>
           <q-btn
             flat

@@ -27,10 +27,17 @@ def claim_event(passport: PrivateKey, issuer_pubkey: str, badge_id: str, **paylo
 @pytest.mark.asyncio
 async def test_nip58_claim_dm_creates_idempotent_award(monkeypatch):
     published = []
+    thread_calls = []
+
+    async def to_thread(function, *args):
+        thread_calls.append(function)
+        return function(*args)
+
     monkeypatch.setattr(
         "badges.services._publish_event",
         lambda event: published.append(event) or event.id,
     )
+    monkeypatch.setattr("badges.services.asyncio.to_thread", to_thread)
     settings = await configure_issuer(uuid4().hex, PrivateKey().bech32())
     assert settings.issuer_pubkey
     badge = await create_badge(
@@ -53,9 +60,11 @@ async def test_nip58_claim_dm_creates_idempotent_award(monkeypatch):
     assert definition.kind == 30009
     assert ["d", badge.id] in definition.tags
     assert ["image", badge.image_url] in definition.tags
+    assert ["subject", "poap:location"] not in definition.tags
     assert award.kind == 8
     assert ["a", f"30009:{settings.issuer_pubkey}:{badge.id}"] in award.tags
     assert ["p", passport.public_key.hex()] in award.tags
+    assert len(thread_calls) == 2
 
     duplicate_result = await process_claim_event(event)
     assert duplicate_result is not None
@@ -70,7 +79,8 @@ async def test_nip58_claim_dm_creates_idempotent_award(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_nip58_claim_dm_checks_location_and_window(monkeypatch):
-    monkeypatch.setattr("badges.services._publish_event", lambda event: event.id)
+    published = []
+    monkeypatch.setattr("badges.services._publish_event", lambda event: published.append(event) or event.id)
     settings = await configure_issuer(uuid4().hex, PrivateKey().bech32())
     assert settings.issuer_pubkey
     badge = await create_badge(
@@ -83,6 +93,11 @@ async def test_nip58_claim_dm_checks_location_and_window(monkeypatch):
             radius_meters=100,
         ),
     )
+    await publish_badge_definition(badge)
+    assert ["subject", "poap:location"] in published[0].tags
+    private_values = ("38.7223", "-9.1393", "100")
+    assert all(value not in str(published[0].tags) for value in private_values)
+    assert all(value not in published[0].content for value in private_values)
     passport = PrivateKey()
 
     with pytest.raises(ValueError, match="Location permission is required"):
@@ -95,6 +110,41 @@ async def test_nip58_claim_dm_checks_location_and_window(monkeypatch):
                 badge.id,
                 lat=38.73,
                 long=-9.1393,
+            )
+        )
+
+    baseline_tolerance = await process_claim_event(
+        claim_event(
+            PrivateKey(),
+            settings.issuer_pubkey,
+            badge.id,
+            lat=38.7245,
+            long=-9.1393,
+        )
+    )
+    assert baseline_tolerance is not None
+
+    reported_accuracy = await process_claim_event(
+        claim_event(
+            PrivateKey(),
+            settings.issuer_pubkey,
+            badge.id,
+            lat=38.73,
+            long=-9.1393,
+            accuracy=800,
+        )
+    )
+    assert reported_accuracy is not None
+
+    with pytest.raises(ValueError, match="outside the badge location"):
+        await process_claim_event(
+            claim_event(
+                PrivateKey(),
+                settings.issuer_pubkey,
+                badge.id,
+                lat=38.739,
+                long=-9.1393,
+                accuracy=5000,
             )
         )
 
@@ -122,3 +172,25 @@ async def test_nip58_claim_dm_checks_location_and_window(monkeypatch):
         await process_claim_event(claim_event(PrivateKey(), settings.issuer_pubkey, later.id))
 
     assert len(await get_badges(settings.issuer_pubkey)) >= 2
+
+
+@pytest.mark.asyncio
+async def test_unrelated_or_non_object_claim_dms_are_silent():
+    settings = await configure_issuer(uuid4().hex, PrivateKey().bech32())
+    assert settings.issuer_pubkey
+    passport = PrivateKey()
+
+    def event(content):
+        return {
+            "kind": 4,
+            "pubkey": passport.public_key.hex(),
+            "content": content,
+            "tags": [["p", settings.issuer_pubkey]],
+        }
+
+    assert await process_claim_event({**event("not encrypted"), "tags": None}) is None
+    assert await process_claim_event({**event("not encrypted"), "tags": 1}) is None
+    assert await process_claim_event(event("not encrypted")) is None
+    for payload in ([], "text", 1, {"type": "other"}):
+        encrypted = passport.encrypt_message(json.dumps(payload), settings.issuer_pubkey)
+        assert await process_claim_event(event(encrypted)) is None

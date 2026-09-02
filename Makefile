@@ -31,8 +31,15 @@ checkeditorconfig:
 	editorconfig-checker
 
 test:
+	@set -eu; \
+	TZ=America/New_York node tests/test_datetime.js; \
+	node tests/test_public.js; \
+	TEST_DATA_DIR=$$(mktemp -d); \
+	trap 'status=$$?; rm -rf "$$TEST_DATA_DIR"; exit $$status' EXIT; \
 	PYTHONUNBUFFERED=1 \
 	DEBUG=true \
+	LNBITS_DATA_FOLDER="$$TEST_DATA_DIR" \
+	LNBITS_DATABASE_URL="" \
 	uv run pytest
 
 install-pre-commit-hook:

@@ -1,6 +1,10 @@
 import asyncio
 import json
 
+try:
+    from lnbits.extensions.nostrclient.router import NostrRouter, nostr_client
+except ModuleNotFoundError:
+    from nostrclient.router import NostrRouter, nostr_client
 from lnbits.helpers import urlsafe_short_hash
 from lnbits.tasks import create_permanent_unique_task
 from loguru import logger
@@ -13,8 +17,6 @@ _task = None
 
 
 async def refresh_claim_subscription() -> None:
-    from lnbits.extensions.nostrclient.router import NostrRouter, nostr_client
-
     nostr_client.relay_manager.close_subscription(SUBSCRIPTION_ID)
     NostrRouter.received_subscription_events.pop(SUBSCRIPTION_ID, None)
     pubkeys = await get_issuer_pubkeys()
@@ -26,8 +28,6 @@ async def refresh_claim_subscription() -> None:
 
 
 async def listen_for_claims() -> None:
-    from lnbits.extensions.nostrclient.router import NostrRouter
-
     while True:
         try:
             await refresh_claim_subscription()
@@ -56,6 +56,4 @@ def badges_start() -> None:
 async def badges_stop() -> None:
     if _task:
         _task.cancel()
-    from lnbits.extensions.nostrclient.router import nostr_client
-
     nostr_client.relay_manager.close_subscription(SUBSCRIPTION_ID)

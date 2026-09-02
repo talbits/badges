@@ -8,10 +8,6 @@ from .models import Badge, Claim, CreateBadge, StoredSettings
 db = Database("ext_badges")
 
 
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 async def create_extension_settings(owner_id: str, issuer_pubkey: str, encrypted_nsec: str) -> StoredSettings:
     settings = StoredSettings(
         owner_id=owner_id,
@@ -31,7 +27,7 @@ async def get_extension_settings(owner_id: str) -> StoredSettings | None:
 
 
 async def update_extension_settings(settings: StoredSettings) -> StoredSettings:
-    settings.updated_at = utc_now()
+    settings.updated_at = _utc_now()
     await db.update("badges.extension_settings", settings)
     return settings
 
@@ -45,8 +41,12 @@ async def get_extension_settings_by_pubkey(issuer_pubkey: str) -> StoredSettings
 
 
 async def get_issuer_pubkeys() -> list[str]:
-    rows = await db.fetchall("SELECT issuer_pubkey FROM badges.extension_settings WHERE issuer_pubkey IS NOT NULL")
-    return [row["issuer_pubkey"] for row in rows]
+    return [
+        row["issuer_pubkey"]
+        for row in await db.fetchall(
+            "SELECT issuer_pubkey FROM badges.extension_settings WHERE issuer_pubkey IS NOT NULL"
+        )
+    ]
 
 
 async def create_badge(issuer_pubkey: str, data: CreateBadge) -> Badge:
@@ -76,7 +76,7 @@ async def get_badge(issuer_pubkey: str, badge_id: str) -> Badge | None:
 
 
 async def update_badge(badge: Badge) -> Badge:
-    badge.updated_at = utc_now()
+    badge.updated_at = _utc_now()
     await db.update("badges.badges", badge)
     return badge
 
@@ -117,7 +117,7 @@ async def create_claim(badge_id: str, passport_pubkey: str, location_verified: b
         badge_id=badge_id,
         passport_pubkey=passport_pubkey,
         award_event_id=None,
-        claimed_at=utc_now(),
+        claimed_at=_utc_now(),
         location_verified=location_verified,
     )
     await db.execute(
@@ -141,3 +141,7 @@ async def create_claim(badge_id: str, passport_pubkey: str, location_verified: b
 async def update_claim(claim: Claim) -> Claim:
     await db.update("badges.claims", claim)
     return claim
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)

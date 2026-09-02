@@ -1,5 +1,41 @@
 let leafletPromise
 
+const IMAGE_OPTIONS = [
+  {label: 'URL', value: 'url', icon: 'link'},
+  {label: 'LNbits asset', value: 'asset', icon: 'upload_file'}
+]
+const ASSET_COLUMNS = [
+  {name: 'name', label: 'Name', field: 'name'},
+  {name: 'created_at', label: 'Created', field: 'created_at'}
+]
+const BADGE_COLUMNS = [
+  {name: 'image', label: 'Image', field: 'image_url', align: 'left'},
+  {name: 'name', label: 'Name', field: 'name', align: 'left'},
+  {name: 'active', label: 'Active', field: 'is_active', align: 'left'},
+  {name: 'actions', label: '', field: 'actions', align: 'right'}
+]
+const CLAIM_COLUMNS = [
+  {
+    name: 'passport_pubkey',
+    label: 'Passport public key',
+    field: 'passport_pubkey',
+    align: 'left'
+  },
+  {name: 'claimed_at', label: 'Claimed', field: 'claimed_at', align: 'left'},
+  {
+    name: 'location_verified',
+    label: 'Location',
+    field: 'location_verified',
+    align: 'left'
+  },
+  {
+    name: 'award_event_id',
+    label: 'Award event',
+    field: 'award_event_id',
+    align: 'left'
+  }
+]
+
 function loadLeaflet() {
   if (window.L) {
     return Promise.resolve(window.L)
@@ -10,11 +46,11 @@ function loadLeaflet() {
   leafletPromise = new Promise((resolve, reject) => {
     const css = document.createElement('link')
     css.rel = 'stylesheet'
-    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+    css.href = '/badges/static/vendor/leaflet/leaflet.css'
     document.head.appendChild(css)
 
     const script = document.createElement('script')
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+    script.src = '/badges/static/vendor/leaflet/leaflet.js'
     script.onload = () => resolve(window.L)
     script.onerror = reject
     document.head.appendChild(script)
@@ -38,46 +74,19 @@ window.PageBadges = {
         issuer_pubkey: null,
         issuer_npub: null
       },
+      relayUrls: [],
       settingsDialog: {
         show: false,
         data: {issuer_nsec: ''}
       },
-      imageOptions: [
-        {label: 'URL', value: 'url', icon: 'link'},
-        {label: 'LNbits asset', value: 'asset', icon: 'upload_file'}
-      ],
-      badgeColumns: [
-        {name: 'image', label: 'Image', field: 'image_url', align: 'left'},
-        {name: 'name', label: 'Name', field: 'name', align: 'left'},
-        {name: 'active', label: 'Active', field: 'is_active', align: 'left'},
-        {name: 'actions', label: '', field: 'actions', align: 'right'}
-      ],
-      claimColumns: [
-        {
-          name: 'passport_pubkey',
-          label: 'Passport public key',
-          field: 'passport_pubkey',
-          align: 'left'
-        },
-        {
-          name: 'claimed_at',
-          label: 'Claimed',
-          field: 'claimed_at',
-          align: 'left'
-        },
-        {
-          name: 'location_verified',
-          label: 'Location',
-          field: 'location_verified',
-          align: 'left'
-        },
-        {
-          name: 'award_event_id',
-          label: 'Award event',
-          field: 'award_event_id',
-          align: 'left'
-        }
-      ],
+      assets: [],
+      assetsTable: {
+        loading: false,
+        search: '',
+        columns: ASSET_COLUMNS,
+        pagination: {rowsPerPage: 6, page: 1}
+      },
+      assetsDialog: {show: false},
       badgeDialog: {
         show: false,
         data: {},
@@ -103,12 +112,28 @@ window.PageBadges = {
     }
   },
   computed: {
+    imageOptions: () => IMAGE_OPTIONS,
+    badgeColumns: () => BADGE_COLUMNS,
+    claimColumns: () => CLAIM_COLUMNS,
     badgeDialogTitle() {
       return this.badgeDialog.data.id ? 'Edit badge' : 'New badge'
     }
   },
+  watch: {
+    'assetsTable.search'() {
+      if (this.assetsDialog.show) this.getBadgeAssets()
+    }
+  },
   methods: {
     badgeAddress(badge) {
+      if (this.relayUrls.length && window.NostrTools?.nip19?.naddrEncode) {
+        return window.NostrTools.nip19.naddrEncode({
+          identifier: badge.id,
+          pubkey: badge.issuer_pubkey,
+          kind: 30009,
+          relays: this.relayUrls
+        })
+      }
       return badge.naddr || `30009:${badge.issuer_pubkey}:${badge.id}`
     },
     async showSettings() {
@@ -149,7 +174,6 @@ window.PageBadges = {
         name: '',
         description: '',
         image_url: '',
-        image_asset_id: null,
         is_active: true,
         starts_at: null,
         ends_at: null,
@@ -164,6 +188,8 @@ window.PageBadges = {
     editBadge(badge) {
       this.badgeDialog.data = {
         ...badge,
+        starts_at: this.toDatetimeLocal(badge.starts_at),
+        ends_at: this.toDatetimeLocal(badge.ends_at),
         location_enabled:
           badge.latitude !== null &&
           badge.longitude !== null &&
@@ -174,14 +200,32 @@ window.PageBadges = {
         : 'url'
       this.badgeDialog.show = true
     },
+    toDatetimeLocal(value) {
+      if (!value || typeof value !== 'string') {
+        return null
+      }
+      if (!/[zZ]|[+-]\d\d:\d\d$/.test(value)) {
+        return value.slice(0, 16)
+      }
+      const date = new Date(value)
+      if (Number.isNaN(date.getTime())) {
+        return value
+      }
+      return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16)
+    },
+    toUtcIso(value) {
+      return value ? new Date(value).toISOString() : null
+    },
     payload(data) {
       return {
         name: data.name,
         description: data.description || null,
         image_url: data.image_url,
         is_active: data.is_active,
-        starts_at: data.starts_at || null,
-        ends_at: data.ends_at || null,
+        starts_at: this.toUtcIso(data.starts_at),
+        ends_at: this.toUtcIso(data.ends_at),
         latitude: data.location_enabled ? data.latitude : null,
         longitude: data.location_enabled ? data.longitude : null,
         radius_meters: data.location_enabled ? data.radius_meters : null
@@ -204,11 +248,61 @@ window.PageBadges = {
           {headers: {'Content-Type': 'multipart/form-data'}}
         )
         this.badgeDialog.data.image_url = `${window.location.origin}/api/v1/assets/${data.id}/data`
-        this.badgeDialog.data.image_asset_id = data.id
         this.$q.notify({type: 'positive', message: 'Badge image uploaded.'})
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       }
+    },
+    async showAssetPicker() {
+      this.assetsDialog.show = true
+      await this.getBadgeAssets()
+    },
+    async getBadgeAssets(props) {
+      this.assetsTable.loading = true
+      try {
+        const params = LNbits.utils.prepareFilterQuery(this.assetsTable, props)
+        const {data} = await LNbits.api.request(
+          'GET',
+          `/api/v1/assets/paginated?${params}`,
+          null
+        )
+        this.assets = data.data
+        this.assetsTable.pagination.rowsNumber = data.total
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+      } finally {
+        this.assetsTable.loading = false
+      }
+    },
+    selectBadgeAsset(asset) {
+      if (!asset.mime_type?.startsWith('image/')) {
+        this.$q.notify({type: 'warning', message: 'Choose an image asset.'})
+        return
+      }
+      if (!asset.is_public) {
+        LNbits.utils
+          .confirmDialog(
+            'This image is private. Make it public so badge claimants can load it?'
+          )
+          .onOk(() => this.publishBadgeAsset(asset))
+        return
+      }
+      this.useBadgeAsset(asset)
+    },
+    async publishBadgeAsset(asset) {
+      try {
+        await LNbits.api.request('PUT', `/api/v1/assets/${asset.id}`, null, {
+          is_public: true
+        })
+        asset.is_public = true
+        this.useBadgeAsset(asset)
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+      }
+    },
+    useBadgeAsset(asset) {
+      this.badgeDialog.data.image_url = `${window.location.origin}/api/v1/assets/${asset.id}/data`
+      this.assetsDialog.show = false
     },
     async openLocationPicker() {
       this.mapDialog.latitude = this.badgeDialog.data.latitude
@@ -349,9 +443,6 @@ window.PageBadges = {
       this.qrDialog.badge = badge
       this.qrDialog.show = true
     },
-    copyBadgeAddress(badge) {
-      LNbits.utils.copyText(this.badgeAddress(badge), 'Nostr address copied')
-    },
     async showClaims(badge) {
       this.claimsDialog.badge = badge
       this.claimsDialog.claims = []
@@ -374,8 +465,20 @@ window.PageBadges = {
       window.open(`/badges/api/v1/badges/${badge.id}/claims.csv`, '_blank')
     }
   },
-  created() {
-    this.getSettings()
-    this.getBadges()
+  async created() {
+    const wallet = this.g.wallet || this.g.user?.wallets?.[0]
+    if (wallet?.adminkey) {
+      try {
+        const {data} = await LNbits.api.request(
+          'GET',
+          '/nostrclient/api/v1/relays/urls',
+          wallet.adminkey
+        )
+        this.relayUrls = Array.isArray(data) ? data : []
+      } catch (error) {
+        // Badge responses still provide a usable naddr when relay discovery fails.
+      }
+    }
+    await Promise.all([this.getSettings(), this.getBadges()])
   }
 }

@@ -5,7 +5,8 @@ async def m001_initial(db):
             owner_id TEXT PRIMARY KEY,
             issuer_pubkey TEXT,
             issuer_nsec_encrypted TEXT,
-            updated_at TIMESTAMP NOT NULL DEFAULT {db.timestamp_now}
+            updated_at TIMESTAMP NOT NULL DEFAULT {db.timestamp_now},
+            UNIQUE (issuer_pubkey)
         );
         """
     )
